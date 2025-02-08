@@ -102,6 +102,8 @@ mod tests {
     use std::sync::Mutex;
     use poem::{http::StatusCode, middleware::AddData, test::TestClient, EndpointExt};
 
+    use crate::test::async_run_with_file_create_teardown;
+
     use super::*;
 
     fn insert_item(db: &mut Db, name: String) {
@@ -114,171 +116,184 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_all_items() {
-        let routes = item_routes();
-        let mut db = Db::init(String::from("./data.json")).unwrap();
-        db.delete_all("item".to_string()).unwrap();
-
-        insert_item(&mut db, String::from("item 1"));
-        insert_item(&mut db, String::from("item 2"));
-        insert_item(&mut db, String::from("item 3"));
-
-        let arc_db = Arc::new(Mutex::new(db));
-
-        let client = TestClient::new(
-            Route::new().nest("/items", routes)
-                .with(AddData::new(arc_db))
-        );
-        let response = client.get("/items").send().await;
-
-        let expected_data = serde_json::json!({
-            "data": [
-                {
-                    "id": 1,
-                    "name": "item 1"
-                },
-                {
-                    "id": 2,
-                    "name": "item 2"
-                },
-                {
-                    "id": 3,
-                    "name": "item 3"
-                }
-            ]
-        });
-
-        response.assert_status_is_ok();
-        response.assert_json(expected_data).await;
+        async_run_with_file_create_teardown(|| async {
+            let routes = item_routes();
+            let mut db = Db::init(String::from("./data.json")).unwrap();
+            db.delete_all("item".to_string()).unwrap();
+    
+            insert_item(&mut db, String::from("item 1"));
+            insert_item(&mut db, String::from("item 2"));
+            insert_item(&mut db, String::from("item 3"));
+    
+            let arc_db = Arc::new(Mutex::new(db));
+    
+            let client = TestClient::new(
+                Route::new().nest("/items", routes)
+                    .with(AddData::new(arc_db))
+            );
+            let response = client.get("/items").send().await;
+    
+            let expected_data = serde_json::json!({
+                "data": [
+                    {
+                        "id": 1,
+                        "name": "item 1"
+                    },
+                    {
+                        "id": 2,
+                        "name": "item 2"
+                    },
+                    {
+                        "id": 3,
+                        "name": "item 3"
+                    }
+                ]
+            });
+    
+            response.assert_status_is_ok();
+            response.assert_json(expected_data).await;
+        }).await;
     }
 
     #[tokio::test]
     async fn test_get_item_by_id() {
-        let routes = item_routes();
-        let mut db = Db::init(String::from("./data.json")).unwrap();
-        db.delete_all("item".to_string()).unwrap();
-
-        insert_item(&mut db, String::from("item 1"));
-        insert_item(&mut db, String::from("item 2"));
-        insert_item(&mut db, String::from("item 3"));
-
-        let arc_db = Arc::new(Mutex::new(db));
-
-        let client = TestClient::new(
-            Route::new().nest("/items", routes)
-                .with(AddData::new(arc_db))
-        );
-
-        let response = client.get("/items/2").send().await;
-
-        let expected_data = serde_json::json!({
-            "data": {
-                "id": 2,
-                "name": "item 2"
-            }
-        });
-
-        response.assert_status_is_ok();
-        response.assert_json(expected_data).await;
+        async_run_with_file_create_teardown(|| async {
+            let routes = item_routes();
+            let mut db = Db::init(String::from("./data.json")).unwrap();
+            db.delete_all("item".to_string()).unwrap();
+    
+            insert_item(&mut db, String::from("item 1"));
+            insert_item(&mut db, String::from("item 2"));
+            insert_item(&mut db, String::from("item 3"));
+    
+            let arc_db = Arc::new(Mutex::new(db));
+    
+            let client = TestClient::new(
+                Route::new().nest("/items", routes)
+                    .with(AddData::new(arc_db))
+            );
+    
+            let response = client.get("/items/2").send().await;
+    
+            let expected_data = serde_json::json!({
+                "data": {
+                    "id": 2,
+                    "name": "item 2"
+                }
+            });
+    
+            response.assert_status_is_ok();
+            response.assert_json(expected_data).await;
+        }).await;
     }
 
     #[tokio::test]
     async fn test_get_item_by_id_not_found() {
-        let routes = item_routes();
-        let mut db = Db::init(String::from("./data.json")).unwrap();
-        db.delete_all("item".to_string()).unwrap();
-
-        let arc_db = Arc::new(Mutex::new(db));
-
-        let client = TestClient::new(
-            Route::new().nest("/items", routes)
-                .with(AddData::new(arc_db))
-        );
-
-        let response = client.get("/items/2").send().await;
-
-        response.assert_status(StatusCode::NOT_FOUND);
+        async_run_with_file_create_teardown(|| async {
+            let routes = item_routes();
+            let mut db = Db::init(String::from("./data.json")).unwrap();
+            db.delete_all("item".to_string()).unwrap();
+    
+            let arc_db = Arc::new(Mutex::new(db));
+    
+            let client = TestClient::new(
+                Route::new().nest("/items", routes)
+                    .with(AddData::new(arc_db))
+            );
+    
+            let response = client.get("/items/2").send().await;
+    
+            response.assert_status(StatusCode::NOT_FOUND);
+        }).await;
     }
 
     #[tokio::test]
     async fn test_create_item() {
-        let routes = item_routes();
-        let mut db = Db::init(String::from("./data.json")).unwrap();
-        db.add_table("item".to_string(), false).unwrap();
-        db.delete_all("item".to_string()).unwrap();
-
-        let arc_db = Arc::new(Mutex::new(db));
-
-        let client = TestClient::new(
-            Route::new().nest("/items", routes)
-                .with(AddData::new(arc_db))
-        );
-
-        let response = client.post("/items")
-            .body_json(&ItemCreateBody{ name: "item 1".to_string() })
-            .send()
-            .await;
-
-        let expected_data = serde_json::json!({
-            "data": {
-                "id": 1,
-                "name": "item 1"
-            }
-        });
-
-        response.assert_status(StatusCode::CREATED);
-        response.assert_json(expected_data).await;
+        async_run_with_file_create_teardown(|| async {
+            let routes = item_routes();
+            let mut db = Db::init(String::from("./data.json")).unwrap();
+            db.add_table("item".to_string(), false).unwrap();
+            db.delete_all("item".to_string()).unwrap();
+    
+            let arc_db = Arc::new(Mutex::new(db));
+    
+            let client = TestClient::new(
+                Route::new().nest("/items", routes)
+                    .with(AddData::new(arc_db))
+            );
+    
+            let response = client.post("/items")
+                .body_json(&ItemCreateBody{ name: "item 1".to_string() })
+                .send()
+                .await;
+    
+            let expected_data = serde_json::json!({
+                "data": {
+                    "id": 1,
+                    "name": "item 1"
+                }
+            });
+    
+            response.assert_status(StatusCode::CREATED);
+            response.assert_json(expected_data).await;
+        }).await;
     }
 
     #[tokio::test]
     async fn test_put_item() {
-        let routes = item_routes();
-        let mut db = Db::init(String::from("./data.json")).unwrap();
-        db.add_table("item".to_string(), false).unwrap();
-        db.delete_all("item".to_string()).unwrap();
+        async_run_with_file_create_teardown(|| async {
 
-        insert_item(&mut db, "item 1".to_string());
-
-        let arc_db = Arc::new(Mutex::new(db));
-
-        let client = TestClient::new(
-            Route::new().nest("/items", routes)
-                .with(AddData::new(arc_db))
-        );
-
-        let put_response = client.put("/items/1")
-            .body_json(&ItemUpdateBody{ name: "item 1 updated".to_string() })
-            .send()
-            .await;
-
-        let get_response = client.get("/items/1")
-            .send()
-            .await;
-        
-        put_response.assert_status_is_ok();
-        get_response.assert_status_is_ok();
-        get_response.assert_json(put_response.json().await).await;
+            let routes = item_routes();
+            let mut db = Db::init(String::from("./data.json")).unwrap();
+            db.add_table("item".to_string(), false).unwrap();
+            db.delete_all("item".to_string()).unwrap();
+    
+            insert_item(&mut db, "item 1".to_string());
+    
+            let arc_db = Arc::new(Mutex::new(db));
+    
+            let client = TestClient::new(
+                Route::new().nest("/items", routes)
+                    .with(AddData::new(arc_db))
+            );
+    
+            let put_response = client.put("/items/1")
+                .body_json(&ItemUpdateBody{ name: "item 1 updated".to_string() })
+                .send()
+                .await;
+    
+            let get_response = client.get("/items/1")
+                .send()
+                .await;
+            
+            put_response.assert_status_is_ok();
+            get_response.assert_status_is_ok();
+            get_response.assert_json(put_response.json().await).await;
+        }).await;
     }
 
     #[tokio::test]
     async fn test_delete_item() {
-        let routes = item_routes();
-        let mut db = Db::init(String::from("./data.json")).unwrap();
-        db.add_table("item".to_string(), false).unwrap();
-        db.delete_all("item".to_string()).unwrap();
+        async_run_with_file_create_teardown(|| async {
+            let routes = item_routes();
+            let mut db = Db::init(String::from("./data.json")).unwrap();
+            db.add_table("item".to_string(), false).unwrap();
+            db.delete_all("item".to_string()).unwrap();
+    
+            insert_item(&mut db, "item 1".to_string());
+    
+            let arc_db = Arc::new(Mutex::new(db));
+    
+            let client = TestClient::new(
+                Route::new().nest("/items", routes)
+                    .with(AddData::new(arc_db))
+            );
+    
+            let response = client.delete("/items/1")
+                .send()
+                .await;
 
-        insert_item(&mut db, "item 1".to_string());
-
-        let arc_db = Arc::new(Mutex::new(db));
-
-        let client = TestClient::new(
-            Route::new().nest("/items", routes)
-                .with(AddData::new(arc_db))
-        );
-
-        let response = client.delete("/items/1")
-            .send()
-            .await;
-        
-        response.assert_status_is_ok();
+            response.assert_status_is_ok();
+        }).await;
     }
 }

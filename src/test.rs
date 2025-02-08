@@ -1,8 +1,11 @@
-use std::panic;
+use std::future::Future;
+use std::panic::{self, AssertUnwindSafe};
 use std::fs::File;
 
+use futures::FutureExt;
 
-static FILE_NAME: &str = "./data.json";
+
+pub static FILE_NAME: &str = "./data.json";
 
 pub fn run_with_file_create_teardown<T>(test: T) -> ()
     where T: FnOnce() -> () + panic::UnwindSafe
@@ -12,6 +15,22 @@ pub fn run_with_file_create_teardown<T>(test: T) -> ()
     let result = panic::catch_unwind(|| {
         test()
     });
+
+    let _ = std::fs::remove_file(FILE_NAME);
+
+    assert!(result.is_ok())
+}
+
+
+pub async fn async_run_with_file_create_teardown<T, U>(test: T) -> ()
+    where T: FnOnce() -> U + panic::UnwindSafe,
+        U: Future<Output = ()>
+{
+    let _ = File::create(FILE_NAME);
+
+    let result = AssertUnwindSafe(test())
+        .catch_unwind()
+        .await;
 
     let _ = std::fs::remove_file(FILE_NAME);
 
