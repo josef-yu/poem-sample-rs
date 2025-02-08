@@ -163,16 +163,15 @@ impl Db {
  mod tests {
     use serde_json::json;
 
-    use crate::test::run_with_file_create_teardown;
+    use crate::test::{run_with_file_create_teardown, TEST_FILE_NAME};
 
     use super::*;
 
-    static FILE_NAME: &str = "./data.json";
 
     #[test]
     fn test_init() {
         run_with_file_create_teardown(|| {
-            let db = Db::init(String::from(FILE_NAME));
+            let db = Db::init(String::from(TEST_FILE_NAME));
 
             assert!(db.is_ok())
         });
@@ -181,7 +180,7 @@ impl Db {
     #[test]
     fn test_add_table() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(FILE_NAME)).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             let table_name = String::from("sample");
             db.add_table(table_name.clone(), true).unwrap();
 
@@ -194,7 +193,7 @@ impl Db {
     #[test]
     fn test_insert() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(FILE_NAME)).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             let table_name = String::from("sample");
             db.add_table(table_name.clone(), true).unwrap();
 
@@ -217,7 +216,7 @@ impl Db {
     #[test]
     fn test_update() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(FILE_NAME)).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             let table_name = String::from("sample");
             db.add_table(table_name.clone(), true).unwrap();
 
@@ -239,7 +238,7 @@ impl Db {
     #[test]
     fn test_delete() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(FILE_NAME)).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             let table_name = String::from("sample");
             db.add_table(table_name.clone(), true).unwrap();
 
@@ -260,7 +259,7 @@ impl Db {
     #[test]
     fn test_delete_all() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(FILE_NAME)).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             let table_name = String::from("sample");
             db.add_table(table_name.clone(), true).unwrap();
 

@@ -102,7 +102,7 @@ mod tests {
     use std::sync::Mutex;
     use poem::{http::StatusCode, middleware::AddData, test::TestClient, EndpointExt};
 
-    use crate::test::async_run_with_file_create_teardown;
+    use crate::test::{async_run_with_file_create_teardown, TEST_FILE_NAME};
 
     use super::*;
 
@@ -118,7 +118,7 @@ mod tests {
     async fn test_get_all_items() {
         async_run_with_file_create_teardown(|| async {
             let routes = item_routes();
-            let mut db = Db::init(String::from("./data.json")).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             db.delete_all("item".to_string()).unwrap();
     
             insert_item(&mut db, String::from("item 1"));
@@ -159,7 +159,7 @@ mod tests {
     async fn test_get_item_by_id() {
         async_run_with_file_create_teardown(|| async {
             let routes = item_routes();
-            let mut db = Db::init(String::from("./data.json")).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             db.delete_all("item".to_string()).unwrap();
     
             insert_item(&mut db, String::from("item 1"));
@@ -191,7 +191,7 @@ mod tests {
     async fn test_get_item_by_id_not_found() {
         async_run_with_file_create_teardown(|| async {
             let routes = item_routes();
-            let mut db = Db::init(String::from("./data.json")).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             db.delete_all("item".to_string()).unwrap();
     
             let arc_db = Arc::new(Mutex::new(db));
@@ -211,7 +211,7 @@ mod tests {
     async fn test_create_item() {
         async_run_with_file_create_teardown(|| async {
             let routes = item_routes();
-            let mut db = Db::init(String::from("./data.json")).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             db.add_table("item".to_string(), false).unwrap();
             db.delete_all("item".to_string()).unwrap();
     
@@ -244,7 +244,7 @@ mod tests {
         async_run_with_file_create_teardown(|| async {
 
             let routes = item_routes();
-            let mut db = Db::init(String::from("./data.json")).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             db.add_table("item".to_string(), false).unwrap();
             db.delete_all("item".to_string()).unwrap();
     
@@ -276,7 +276,7 @@ mod tests {
     async fn test_delete_item() {
         async_run_with_file_create_teardown(|| async {
             let routes = item_routes();
-            let mut db = Db::init(String::from("./data.json")).unwrap();
+            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             db.add_table("item".to_string(), false).unwrap();
             db.delete_all("item".to_string()).unwrap();
     
