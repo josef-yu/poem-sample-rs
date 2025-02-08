@@ -1,5 +1,6 @@
 use serde::{Serialize, Deserialize};
 use poem::{http::StatusCode, Error, FromRequest, Result};
+use serde_json::Value;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -53,5 +54,19 @@ impl<'a> FromRequest<'a> for ItemUpdateBody {
             .or_else(|_| Err(Error::from_string("Malformed body", StatusCode::BAD_REQUEST)))?;
 
         Ok(body)
+    }
+}
+
+impl From<Value> for Item {
+    fn from(value: Value) -> Self {
+        serde_json::from_value::<Item>(value)
+            .unwrap()
+    }
+}
+
+impl Into<Value> for Item {
+    fn into(self) -> Value {
+        serde_json::to_value(self)
+            .unwrap()
     }
 }

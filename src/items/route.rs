@@ -3,32 +3,42 @@ use std::sync::{Arc, Mutex};
 use poem::http::StatusCode;
 use poem::Error;
 use poem::{get, handler, Route, Result, error::NotFoundError};
-use poem::web::{Data, Json, Path};
+use poem::web::{Data, Path};
+use serde_json::Value;
 
 use crate::db::Db;
 use crate::items::model::{Item, ItemCreateBody, ItemUpdateBody};
+use crate::response::GenericResponse;
 
 const ITEM_TABLE_NAME: &str = "item";
 
 #[handler]
-fn get_all_items(db: Data<&Arc<Mutex<Db>>>) -> Result<Json<serde_json::Value>> {
+fn get_all_items(db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Vec<Item>>> {
     let db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
     let items = db_ref.find_all::<Item>(String::from(ITEM_TABLE_NAME)).unwrap_or(Vec::new());
 
-    return Ok(Json(serde_json::json!(items)));
+    Ok(GenericResponse::<Vec<Item>>{
+        message: None,
+        status_code_u16: StatusCode::OK.as_u16(),
+        data: Some(items)
+    })
 }
 
 #[handler]
-fn get_item_by_id(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<Json<serde_json::Value>> {
+fn get_item_by_id(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
     let db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
     let item = db_ref.find_by_id::<Item>(String::from(ITEM_TABLE_NAME), id)
         .ok_or(NotFoundError)?;
 
-    return Ok(Json(serde_json::json!(item)))
+    Ok(GenericResponse::<Item>{
+        message: None,
+        status_code_u16: StatusCode::OK.as_u16(),
+        data: Some(item)
+    })
 }
 
 #[handler]
-fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Json<serde_json::Value>> {
+fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
     let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
     let id = db_ref.get_increment_last_id(ITEM_TABLE_NAME.to_string()).unwrap().unwrap();
     let to_insert = Item::new(id, payload.name);
@@ -38,11 +48,15 @@ fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Jso
         .unwrap();
         
 
-    Ok(Json(serde_json::json!(item)))
+    Ok(GenericResponse::<Item>{
+        message: None,
+        status_code_u16: StatusCode::CREATED.as_u16(),
+        data: Some(item)
+    })
 }
 
 #[handler]
-fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Json<serde_json::Value>> {
+fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
     let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
     db_ref
         .find_by_id::<Item>(ITEM_TABLE_NAME.to_string(), id)
@@ -52,17 +66,25 @@ fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db
         .insert_or_update(ITEM_TABLE_NAME.to_string(), id, to_update.clone())
         .unwrap();
 
-    Ok(Json(serde_json::json!(to_update)))
+    Ok(GenericResponse::<Item>{
+        message: None,
+        status_code_u16: StatusCode::OK.as_u16(),
+        data: Some(to_update)
+    })
 }
 
 #[handler]
-fn delete_item(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<Json<serde_json::Value>> {
+fn delete_item(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Value>> {
     let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
     db_ref
         .delete_by_id(ITEM_TABLE_NAME.to_string(), id)
         .unwrap();
 
-    Ok(Json(serde_json::json!({"message": "Item deleted successfully"})))
+    Ok(GenericResponse::<Value>{
+        message: Some("Item deleted successfully".to_string()),
+        status_code_u16: StatusCode::OK.as_u16(),
+        data: None
+    })
 }
 
 
@@ -108,20 +130,22 @@ mod tests {
         );
         let response = client.get("/items").send().await;
 
-        let expected_data = serde_json::json!([
-            {
-                "id": 1,
-                "name": "item 1"
-            },
-            {
-                "id": 2,
-                "name": "item 2"
-            },
-            {
-                "id": 3,
-                "name": "item 3"
-            }
-        ]);
+        let expected_data = serde_json::json!({
+            "data": [
+                {
+                    "id": 1,
+                    "name": "item 1"
+                },
+                {
+                    "id": 2,
+                    "name": "item 2"
+                },
+                {
+                    "id": 3,
+                    "name": "item 3"
+                }
+            ]
+        });
 
         response.assert_status_is_ok();
         response.assert_json(expected_data).await;
@@ -147,8 +171,10 @@ mod tests {
         let response = client.get("/items/2").send().await;
 
         let expected_data = serde_json::json!({
-            "id": 2,
-            "name": "item 2"
+            "data": {
+                "id": 2,
+                "name": "item 2"
+            }
         });
 
         response.assert_status_is_ok();
@@ -193,11 +219,13 @@ mod tests {
             .await;
 
         let expected_data = serde_json::json!({
-            "id": 1,
-            "name": "item 1"
+            "data": {
+                "id": 1,
+                "name": "item 1"
+            }
         });
 
-        response.assert_status_is_ok();
+        response.assert_status(StatusCode::CREATED);
         response.assert_json(expected_data).await;
     }
 

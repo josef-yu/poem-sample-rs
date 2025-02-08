@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 use poem::middleware::{AddData, Tracing};
 use poem::Middleware;
 use poem::{listener::TcpListener, EndpointExt, Route, Server};
+use response::GenericResponse;
+use serde_json::Value;
 
 use crate::items::route::item_routes;
 use crate::db::Db;
@@ -26,7 +28,14 @@ async fn main() -> Result<(), std::io::Error> {
 
     let app = Route::new()
         .nest("/items", item_routes())
-        .with(AddData::new(db_ref).combine(Tracing));
+        .with(AddData::new(db_ref).combine(Tracing))
+        .catch_all_error(|err| async move {
+            GenericResponse::<Value>{ 
+                message: Some(err.to_string()),
+                status_code_u16: err.status().as_u16(),
+                data: None
+            }
+        });
     Server::new(TcpListener::bind("0.0.0.0:3000"))
         .run(app)
         .await
