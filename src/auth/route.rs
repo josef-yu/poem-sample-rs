@@ -19,7 +19,7 @@ pub fn login(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>, manager: Data<&jw
         .map(|x| x.first().cloned().unwrap())
         .ok_or(
             Error::from_status(StatusCode::UNAUTHORIZED)
-        ).expect("Finding user by value");
+        )?;
     
     if user.password != payload.password {
         return Err(Error::from_status(StatusCode::UNAUTHORIZED))
@@ -46,8 +46,7 @@ pub fn register(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Gene
         .find_by_value::<User>(USER_TABLE_NAME.to_string(), "username".to_string(), payload.username.clone())
         .ok_or(
             Error::from_status(StatusCode::UNAUTHORIZED)
-        )
-        .expect("Finding user by value");
+        )?;
     
     if !users.is_empty() {
         return Ok(GenericResponse{

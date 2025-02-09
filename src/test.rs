@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::auth;
 use crate::db::Db;
+use crate::response::GenericResponse;
 
 
 pub static TEST_FILE_NAME: &str = "./test-data.json";
@@ -66,24 +67,33 @@ pub struct ApiTestClient<E> {
     pub token: String
 }
 
-impl<E: Endpoint> ApiTestClient<E> {
-    pub fn init<T>(route: T) -> ApiTestClient<impl Endpoint> 
+impl<E: Endpoint + EndpointExt> ApiTestClient<E> {
+    pub fn init<T>(route: T) -> ApiTestClient<impl Endpoint + EndpointExt> 
         where T: IntoEndpoint<Endpoint = E>
     {
         let db = Db::init(TEST_FILE_NAME.to_string()).unwrap();
         let arc_db = Arc::new(Mutex::new(db));
-
+        
         let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
         let jwt_middleware = auth::middleware::JwtMiddleware{ manager: jwt_manager.clone() };
         let jwt_data = jwt_manager.create_token_data(TEST_USERNAME.to_string(), vec![TEST_PERMISSION.to_string()]);
         let token = jwt_manager.encode(jwt_data).unwrap();
 
         let client = TestClient::new(
-            route.with(
+        route
+            .with(
     jwt_middleware
                     .combine(AddData::new(arc_db.clone()))
                     .combine(AddData::new(jwt_manager.clone()))
-            ));
+            )
+            .catch_all_error(|err| async move {
+                GenericResponse::<Value>{ 
+                    message: Some(err.to_string()),
+                    status_code_u16: err.status().as_u16(),
+                    data: None
+                }
+            })
+        );
 
         ApiTestClient {
             db: arc_db,

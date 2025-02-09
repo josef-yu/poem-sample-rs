@@ -65,7 +65,7 @@ impl Db {
     }
 
     fn flush(&mut self) -> DynaResult<'_, ()> {
-        let contents = serde_json::to_string(&self.tables).expect("Flushing to db file");
+        let contents = serde_json::to_string(&self.tables)?;
 
         self.write(contents)
     }

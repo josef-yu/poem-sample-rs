@@ -36,8 +36,7 @@ fn get_item_by_id(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<Gene
         .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
         .expect("Getting db lock");
     let item = db_ref.find_by_id::<Item>(String::from(ITEM_TABLE_NAME), id)
-        .ok_or(NotFoundError)
-        .expect("Getting user by id");
+        .ok_or(NotFoundError)?;
 
     Ok(GenericResponse::<Item>{
         message: None,
@@ -78,8 +77,7 @@ fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db
         .expect("Getting db lock");
     db_ref
         .find_by_id::<Item>(ITEM_TABLE_NAME.to_string(), id)
-        .ok_or(NotFoundError)
-        .expect("Finding item by id to update");
+        .ok_or(NotFoundError)?;
     let to_update = Item::new(id, payload.name);
     db_ref
         .insert_or_update(ITEM_TABLE_NAME.to_string(), id, to_update.clone())
