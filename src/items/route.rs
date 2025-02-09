@@ -37,8 +37,10 @@ fn get_item_by_id(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<Gene
     })
 }
 
+#[poem_grants::protect("MUTATE")]
 #[handler]
 fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
+    
     let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
     let id = db_ref.get_increment_last_id(ITEM_TABLE_NAME.to_string()).unwrap().unwrap();
     let to_insert = Item::new(id, payload.name);
@@ -55,6 +57,7 @@ fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Gen
     })
 }
 
+#[poem_grants::protect("MUTATE")]
 #[handler]
 fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
     let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
@@ -73,6 +76,7 @@ fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db
     })
 }
 
+#[poem_grants::protect("MUTATE")]
 #[handler]
 fn delete_item(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Value>> {
     let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
@@ -100,9 +104,9 @@ pub fn item_routes() -> Route {
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
-    use poem::{http::StatusCode, middleware::AddData, test::TestClient, EndpointExt};
+    use poem::{http::StatusCode, middleware::AddData, test::TestClient, EndpointExt, Middleware};
 
-    use crate::test::{async_run_with_file_create_teardown, TEST_FILE_NAME};
+    use crate::{auth::{self, model::User, route::USER_TABLE_NAME}, test::{async_run_with_file_create_teardown, TEST_FILE_NAME}};
 
     use super::*;
 
@@ -209,21 +213,42 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_item() {
-        async_run_with_file_create_teardown(|| async {
-            let routes = item_routes();
+        async_run_with_file_create_teardown(|| async {            
             let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
             db.add_table("item".to_string(), false).unwrap();
             db.delete_all("item".to_string()).unwrap();
-    
+            db.add_table(USER_TABLE_NAME.to_string(), true).unwrap();
+
+            let username = "username".to_string();
+            let password = "password".to_string();
+            let permissions = vec!["MUTATE".to_string()];
+
+            let id = db.get_increment_last_id(USER_TABLE_NAME.to_string()).unwrap().unwrap();
+            let to_insert = User::new(
+                id, 
+                username.clone(), 
+                password.clone(), 
+                permissions.clone()
+            );
+            db
+                .insert_or_update(USER_TABLE_NAME.to_string(), id, to_insert)
+                .unwrap()
+                .unwrap();
+
             let arc_db = Arc::new(Mutex::new(db));
-    
+            let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
+            let jwt_middleware = auth::middleware::JwtMiddleware{ manager: jwt_manager.clone() };
+            let jwt_data = jwt_manager.create_token_data(username, permissions);
+            let token = jwt_manager.encode(jwt_data).unwrap();
+
             let client = TestClient::new(
-                Route::new().nest("/items", routes)
-                    .with(AddData::new(arc_db))
+                Route::new().nest("/items", item_routes())
+                    .with(jwt_middleware.combine(AddData::new(arc_db)).combine(AddData::new(jwt_manager)))
             );
     
             let response = client.post("/items")
                 .body_json(&ItemCreateBody{ name: "item 1".to_string() })
+                .header("Authorization", format!("Bearer {}", token))
                 .send()
                 .await;
     
@@ -249,16 +274,39 @@ mod tests {
             db.delete_all("item".to_string()).unwrap();
     
             insert_item(&mut db, "item 1".to_string());
-    
+
+            db.add_table(USER_TABLE_NAME.to_string(), true).unwrap();
+
+            let username = "username".to_string();
+            let password = "password".to_string();
+            let permissions = vec!["MUTATE".to_string()];
+
+            let id = db.get_increment_last_id(USER_TABLE_NAME.to_string()).unwrap().unwrap();
+            let to_insert = User::new(
+                id, 
+                username.clone(), 
+                password.clone(), 
+                permissions.clone()
+            );
+            db
+                .insert_or_update(USER_TABLE_NAME.to_string(), id, to_insert)
+                .unwrap()
+                .unwrap();
+
             let arc_db = Arc::new(Mutex::new(db));
-    
+            let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
+            let jwt_middleware = auth::middleware::JwtMiddleware{ manager: jwt_manager.clone() };
+            let jwt_data = jwt_manager.create_token_data(username, permissions);
+            let token = jwt_manager.encode(jwt_data).unwrap();
+        
             let client = TestClient::new(
                 Route::new().nest("/items", routes)
-                    .with(AddData::new(arc_db))
+                    .with(jwt_middleware.combine(AddData::new(arc_db)).combine(AddData::new(jwt_manager)))
             );
     
             let put_response = client.put("/items/1")
                 .body_json(&ItemUpdateBody{ name: "item 1 updated".to_string() })
+                .header("Authorization", format!("Bearer {}", token))
                 .send()
                 .await;
     
@@ -281,15 +329,38 @@ mod tests {
             db.delete_all("item".to_string()).unwrap();
     
             insert_item(&mut db, "item 1".to_string());
-    
+
+            db.add_table(USER_TABLE_NAME.to_string(), true).unwrap();
+
+            let username = "username".to_string();
+            let password = "password".to_string();
+            let permissions = vec!["MUTATE".to_string()];
+
+            let id = db.get_increment_last_id(USER_TABLE_NAME.to_string()).unwrap().unwrap();
+            let to_insert = User::new(
+                id, 
+                username.clone(), 
+                password.clone(), 
+                permissions.clone()
+            );
+            db
+                .insert_or_update(USER_TABLE_NAME.to_string(), id, to_insert)
+                .unwrap()
+                .unwrap();
+
             let arc_db = Arc::new(Mutex::new(db));
-    
+            let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
+            let jwt_middleware = auth::middleware::JwtMiddleware{ manager: jwt_manager.clone() };
+            let jwt_data = jwt_manager.create_token_data(username, permissions);
+            let token = jwt_manager.encode(jwt_data).unwrap();
+        
             let client = TestClient::new(
                 Route::new().nest("/items", routes)
-                    .with(AddData::new(arc_db))
+                    .with(jwt_middleware.combine(AddData::new(arc_db)).combine(AddData::new(jwt_manager)))
             );
     
             let response = client.delete("/items/1")
+                .header("Authorization", format!("Bearer {}", token))
                 .send()
                 .await;
 
