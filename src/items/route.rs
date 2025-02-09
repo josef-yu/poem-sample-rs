@@ -134,11 +134,11 @@ mod tests {
         db.insert_or_update(table_name.clone(), id, to_insert).unwrap();
     }
 
-    fn init_client() -> ApiTestClient<impl Endpoint> {
+    fn init_client(file_name: String) -> ApiTestClient<impl Endpoint> {
         let routes = Route::new().nest(
             "/items", item_routes()
         );
-        let test_client = ApiTestClient::init(routes);
+        let test_client = ApiTestClient::init(routes, file_name.as_str());
         {
             let mut db = test_client.db.lock().unwrap();
             db.add_table("item".to_string(), false).unwrap();
@@ -150,133 +150,151 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_all_items() {
-        async_run_with_file_create_teardown(|| async {
-            let test_client = init_client();
-            {
-                let mut db = test_client.db.lock().unwrap();
-                insert_item(&mut db, String::from("item 1"));
-                insert_item(&mut db, String::from("item 2"));
-                insert_item(&mut db, String::from("item 3"));
+        async_run_with_file_create_teardown(|file_name| {
+            let file_name = file_name.to_string();
+            async {
+                let test_client = init_client(file_name);
+                {
+                    let mut db = test_client.db.lock().unwrap();
+                    insert_item(&mut db, String::from("item 1"));
+                    insert_item(&mut db, String::from("item 2"));
+                    insert_item(&mut db, String::from("item 3"));
+                }
+                let response = test_client.client.get("/items").send().await;
+        
+                let expected_data = serde_json::json!({
+                    "data": [
+                        {
+                            "id": 1,
+                            "name": "item 1"
+                        },
+                        {
+                            "id": 2,
+                            "name": "item 2"
+                        },
+                        {
+                            "id": 3,
+                            "name": "item 3"
+                        }
+                    ]
+                });
+        
+                response.assert_status_is_ok();
+                response.assert_json(expected_data).await;
             }
-            let response = test_client.client.get("/items").send().await;
-    
-            let expected_data = serde_json::json!({
-                "data": [
-                    {
-                        "id": 1,
-                        "name": "item 1"
-                    },
-                    {
-                        "id": 2,
-                        "name": "item 2"
-                    },
-                    {
-                        "id": 3,
-                        "name": "item 3"
-                    }
-                ]
-            });
-    
-            response.assert_status_is_ok();
-            response.assert_json(expected_data).await;
         }).await;
     }
 
     #[tokio::test]
     async fn test_get_item_by_id() {
-        async_run_with_file_create_teardown(|| async {
-            let test_client = init_client();
-            {
-                let mut db = test_client.db.lock().unwrap();
-                insert_item(&mut db, String::from("item 1"));
-                insert_item(&mut db, String::from("item 2"));
-                insert_item(&mut db, String::from("item 3"));
-            }
-    
-            let response = test_client.client.get("/items/2").send().await;
-    
-            let expected_data = serde_json::json!({
-                "data": {
-                    "id": 2,
-                    "name": "item 2"
+        async_run_with_file_create_teardown(|file_name| {
+            let file_name = file_name.to_string();
+            async {
+                let test_client = init_client(file_name);
+                {
+                    let mut db = test_client.db.lock().unwrap();
+                    insert_item(&mut db, String::from("item 1"));
+                    insert_item(&mut db, String::from("item 2"));
+                    insert_item(&mut db, String::from("item 3"));
                 }
-            });
-    
-            response.assert_status_is_ok();
-            response.assert_json(expected_data).await;
+        
+                let response = test_client.client.get("/items/2").send().await;
+        
+                let expected_data = serde_json::json!({
+                    "data": {
+                        "id": 2,
+                        "name": "item 2"
+                    }
+                });
+        
+                response.assert_status_is_ok();
+                response.assert_json(expected_data).await;
+            }
         }).await;
     }
 
     #[tokio::test]
     async fn test_get_item_by_id_not_found() {
-        async_run_with_file_create_teardown(|| async {      
-            let test_client = init_client();
-            let response = test_client.client.get("/items/99").send().await;
-    
-            response.assert_status(StatusCode::NOT_FOUND);
+        async_run_with_file_create_teardown(|file_name| {
+            let file_name = file_name.to_string();
+            async {      
+                let test_client = init_client(file_name);
+                let response = test_client.client.get("/items/99").send().await;
+        
+                response.assert_status(StatusCode::NOT_FOUND);
+            }
         }).await;
     }
 
     #[tokio::test]
     async fn test_create_item() {
-        async_run_with_file_create_teardown(|| async {      
-            let test_client = init_client();
-    
-            let response = test_client.client.post("/items")
-                .body_json(&ItemCreateBody{ name: "item 1".to_string() })
-                .header("Authorization", format!("Bearer {}", test_client.token))
-                .send()
-                .await;
-    
-            let expected_data = serde_json::json!({
-                "data": {
-                    "id": 1,
-                    "name": "item 1"
-                }
-            });
-    
-            response.assert_status(StatusCode::CREATED);
-            response.assert_json(expected_data).await;
+        async_run_with_file_create_teardown(|file_name| {
+            let file_name = file_name.to_string();
+            async {      
+                let test_client = init_client(file_name);
+        
+                let response = test_client.client.post("/items")
+                    .body_json(&ItemCreateBody{ name: "item 1".to_string() })
+                    .header("Authorization", format!("Bearer {}", test_client.token))
+                    .send()
+                    .await;
+        
+                let expected_data = serde_json::json!({
+                    "data": {
+                        "id": 1,
+                        "name": "item 1"
+                    }
+                });
+        
+                response.assert_status(StatusCode::CREATED);
+                response.assert_json(expected_data).await;
+            }
         }).await;
     }
 
     #[tokio::test]
     async fn test_put_item() {
-        async_run_with_file_create_teardown(|| async {
-            let test_client = init_client();
+        async_run_with_file_create_teardown(|file_name| {
+            let file_name = file_name.to_string();
+            async {
+                let test_client = init_client(file_name);
 
-            {
-                let mut db = test_client.db.lock().unwrap();
-                insert_item(&mut db, "item 1".to_string());
+                {
+                    let mut db = test_client.db.lock().unwrap();
+                    insert_item(&mut db, "item 1".to_string());
+                }
+        
+                let put_response = test_client.client.put("/items/1")
+                    .body_json(&ItemUpdateBody{ name: "item 1 updated".to_string() })
+                    .header("Authorization", format!("Bearer {}", test_client.token))
+                    .send()
+                    .await;
+        
+                let get_response = test_client.client.get("/items/1")
+                    .send()
+                    .await;
+                
+                put_response.assert_status_is_ok();
+                get_response.assert_status_is_ok();
+                get_response.assert_json(put_response.json().await).await;
             }
-    
-            let put_response = test_client.client.put("/items/1")
-                .body_json(&ItemUpdateBody{ name: "item 1 updated".to_string() })
-                .header("Authorization", format!("Bearer {}", test_client.token))
-                .send()
-                .await;
-    
-            let get_response = test_client.client.get("/items/1")
-                .send()
-                .await;
-            
-            put_response.assert_status_is_ok();
-            get_response.assert_status_is_ok();
-            get_response.assert_json(put_response.json().await).await;
         }).await;
     }
 
     #[tokio::test]
     async fn test_delete_item() {
-        async_run_with_file_create_teardown(|| async {
-            let test_client = init_client();
+        async_run_with_file_create_teardown(|file_name| {
+            let file_name = file_name.to_string();
+            async {
+                let test_client = init_client(file_name);
 
-            let response = test_client.client.delete("/items/1")
-                .header("Authorization", format!("Bearer {}", test_client.token))
-                .send()
-                .await;
+                let response = test_client.client.delete("/items/1")
+                    .header("Authorization", format!("Bearer {}", test_client.token))
+                    .send()
+                    .await;
 
-            response.assert_status_is_ok();
+                response.assert_status_is_ok();
+            }
         }).await;
     }
 }

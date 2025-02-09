@@ -85,11 +85,11 @@ mod tests {
 
     use super::*;
 
-    fn init_client() -> ApiTestClient<impl Endpoint> {
+    fn init_client(file_name: String) -> ApiTestClient<impl Endpoint> {
         let routes = Route::new().nest(
             "/", auth_routes()
         );
-        let test_client = ApiTestClient::init(routes);
+        let test_client = ApiTestClient::init(routes, file_name.as_str());
         {
             let mut db = test_client.db.lock().unwrap();
             db.add_table(USER_TABLE_NAME.to_string(), false).unwrap();
@@ -115,39 +115,45 @@ mod tests {
 
     #[tokio::test]
     async fn test_login() {
-        async_run_with_file_create_teardown(|| async {
-            let test_client = init_client();
-            {
-                let mut db = test_client.db.lock().unwrap();
-                insert_user(&mut db, TEST_USERNAME, TEST_PASSWORD);
-            }
+        async_run_with_file_create_teardown(|file_name| {
+            let file_name = file_name.to_string();
+            async {
+                let test_client = init_client(file_name);
+                {
+                    let mut db = test_client.db.lock().unwrap();
+                    insert_user(&mut db, TEST_USERNAME, TEST_PASSWORD);
+                }
 
-            let response = test_client.client.post("/login")
-                .body_json(&UserFormBody{
-                    username: TEST_USERNAME.to_string(),
-                    password: TEST_PASSWORD.to_string()
-                })
-                .send()
-                .await;
-            
-            response.assert_status_is_ok();
+                let response = test_client.client.post("/login")
+                    .body_json(&UserFormBody{
+                        username: TEST_USERNAME.to_string(),
+                        password: TEST_PASSWORD.to_string()
+                    })
+                    .send()
+                    .await;
+                
+                response.assert_status_is_ok();
+            }
         }).await;
     }
 
     #[tokio::test]
     async fn test_register() {
-        async_run_with_file_create_teardown(|| async {
-            let test_client = init_client();
+        async_run_with_file_create_teardown(|file_name| {
+            let file_name = file_name.to_string();
+            async {
+                let test_client = init_client(file_name);
 
-            let response = test_client.client.post("/register")
-                .body_json(&UserFormBody{ 
-                    username: TEST_USERNAME.to_string(),
-                    password: TEST_PASSWORD.to_string()
-                })
-                .send()
-                .await;
+                let response = test_client.client.post("/register")
+                    .body_json(&UserFormBody{ 
+                        username: TEST_USERNAME.to_string(),
+                        password: TEST_PASSWORD.to_string()
+                    })
+                    .send()
+                    .await;
 
-            response.assert_status(StatusCode::CREATED);
+                response.assert_status(StatusCode::CREATED);
+            }
         }).await;
     }
 }

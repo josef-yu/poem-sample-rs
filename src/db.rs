@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use serde::de::DeserializeOwned;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
+use fs4::fs_std::FileExt;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -57,9 +58,13 @@ impl Db {
 
     fn write(&mut self, data: String) -> DynaResult<'_, ()>{
         let mut file = self.file.lock()?;
-        file.set_len(0)?;
-        file.rewind()?;
-        file.write_all(data.as_bytes())?;
+        {
+            file.lock_shared()?;
+            file.set_len(0)?;
+            file.rewind()?;
+            file.write_all(data.as_bytes())?;
+            file.unlock()?;
+        }
 
         Ok(())
     }
@@ -193,14 +198,14 @@ impl Db {
  mod tests {
     use serde_json::json;
 
-    use crate::test::{run_with_file_create_teardown, TEST_FILE_NAME};
+    use crate::test::run_with_file_create_teardown;
 
     use super::*;
 
     const TABLE_NAME: &str = "sample";
 
-    fn init_db() -> Db {
-        let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
+    fn init_db(file_name: &str) -> Db {
+        let mut db = Db::init(String::from(file_name)).unwrap();
         let table_name = String::from(TABLE_NAME);
         db.add_table(table_name.clone(), true).unwrap();
 
@@ -217,8 +222,8 @@ impl Db {
 
     #[test]
     fn test_init() {
-        run_with_file_create_teardown(|| {
-            let db = Db::init(String::from(TEST_FILE_NAME));
+        run_with_file_create_teardown(|file_name| {
+            let db = Db::init(String::from(file_name));
 
             assert!(db.is_ok())
         });
@@ -226,8 +231,8 @@ impl Db {
 
     #[test]
     fn test_add_table() {
-        run_with_file_create_teardown(|| {
-            let db = init_db();
+        run_with_file_create_teardown(|file_name| {
+            let db = init_db(file_name);
 
             let result = db.find_all::<Value>(TABLE_NAME.to_string());
 
@@ -237,8 +242,8 @@ impl Db {
 
     #[test]
     fn test_insert() {
-        run_with_file_create_teardown(|| {
-            let mut db = init_db();
+        run_with_file_create_teardown(|file_name| {
+            let mut db = init_db(file_name);
             let (id, inserted) = upsert_item(&mut db, "sample");
 
             let data = db.find_by_id::<Value>(TABLE_NAME.to_string(), id).unwrap();
@@ -252,8 +257,8 @@ impl Db {
 
     #[test]
     fn test_update() {
-        run_with_file_create_teardown(|| {
-            let mut db = init_db();
+        run_with_file_create_teardown(|file_name| {
+            let mut db = init_db(file_name);
 
             let (id, inserted) = upsert_item(&mut db, "sample");
             let data = db.find_by_id::<Value>(TABLE_NAME.to_string(), id).unwrap();
@@ -269,8 +274,8 @@ impl Db {
 
     #[test]
     fn test_delete() {
-        run_with_file_create_teardown(|| {
-            let mut db = init_db();
+        run_with_file_create_teardown(|file_name| {
+            let mut db = init_db(file_name);
 
             let (id, inserted) = upsert_item(&mut db, "sample");
 
@@ -286,8 +291,8 @@ impl Db {
 
     #[test]
     fn test_delete_all() {
-        run_with_file_create_teardown(|| {
-            let mut db = init_db();
+        run_with_file_create_teardown(|file_name| {
+            let mut db = init_db(file_name);
 
             let (id, inserted) = upsert_item(&mut db, "sample");
 
@@ -309,11 +314,14 @@ impl Db {
 
     #[test]
     fn test_find_by_value() {
-        let mut db = init_db();
-        upsert_item(&mut db, "sample");
+        run_with_file_create_teardown(|file_name| {
+            let mut db = init_db(file_name);
+            upsert_item(&mut db, "sample");
 
-        let result = db.find_by_value::<Value>(TABLE_NAME.to_string(), "value".to_string(), "sample".to_string()).unwrap();
+            let result = db.find_by_value::<Value>(TABLE_NAME.to_string(), "value".to_string(), "sample".to_string()).unwrap();
 
-        assert_eq!(result.len(), 1)
+            assert_eq!(result.len(), 1)
+
+        });
     }
  }

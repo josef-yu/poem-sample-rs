@@ -8,43 +8,53 @@ use poem::middleware::{AddData, Middleware};
 use poem::test::TestClient;
 use poem::{Endpoint, EndpointExt, IntoEndpoint};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::auth;
 use crate::db::Db;
 use crate::response::GenericResponse;
 
 
-pub static TEST_FILE_NAME: &str = "./test-data.json";
+pub static TEST_FILE_NAME: &str = "test-data.json";
 pub const TEST_USERNAME: &str = "username";
 pub const TEST_PASSWORD: &str = "password";
 pub const TEST_PERMISSION: &str = "MUTATE";
 
+
 pub fn run_with_file_create_teardown<T>(test: T)
-    where T: FnOnce() + panic::UnwindSafe
+    where T: FnOnce(&str) + panic::UnwindSafe
 {
-    let _ = File::create(TEST_FILE_NAME);
+    let uuid = Uuid::new_v4().to_string();
+    let file_name = format!("./{}-{}", uuid, TEST_FILE_NAME);
+    let file_name_str = file_name.as_str();
+
+    let _ = File::create(file_name.clone());
 
     let result = panic::catch_unwind(|| {
-        test()
+        test(file_name_str)
     });
 
-    let _ = std::fs::remove_file(TEST_FILE_NAME);
+    let _ = std::fs::remove_file(file_name);
 
     assert!(result.is_ok())
 }
 
 
 pub async fn async_run_with_file_create_teardown<T, U>(test: T)
-    where T: FnOnce() -> U + panic::UnwindSafe,
+    where T: FnOnce(&str) -> U + panic::UnwindSafe,
         U: Future<Output = ()>
 {
-    let _ = File::create(TEST_FILE_NAME);
+    let uuid = Uuid::new_v4().to_string();
+    let file_name = format!("./{}-{}", uuid, TEST_FILE_NAME);
+    let file_name_str = file_name.as_str();
 
-    let result = AssertUnwindSafe(test())
+    let _ = File::create(file_name.clone());
+
+    let result = AssertUnwindSafe(test(file_name_str))
         .catch_unwind()
         .await;
 
-    let _ = std::fs::remove_file(TEST_FILE_NAME);
+    let _ = std::fs::remove_file(file_name);
 
     assert!(result.is_ok())
 }
@@ -57,10 +67,10 @@ pub struct ApiTestClient<E> {
 }
 
 impl<E: Endpoint + EndpointExt> ApiTestClient<E> {
-    pub fn init<T>(route: T) -> ApiTestClient<impl Endpoint + EndpointExt> 
+    pub fn init<T>(route: T, file_name: &str) -> ApiTestClient<impl Endpoint + EndpointExt> 
         where T: IntoEndpoint<Endpoint = E>
     {
-        let db = Db::init(TEST_FILE_NAME.to_string()).unwrap();
+        let db = Db::init(file_name.to_string()).unwrap();
         let arc_db = Arc::new(Mutex::new(db));
         
         let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
