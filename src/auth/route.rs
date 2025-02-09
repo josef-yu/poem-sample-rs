@@ -13,7 +13,7 @@ pub const USER_TABLE_NAME: &str = "user";
 pub fn login(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>, manager: Data<&jwt::Manager>) -> Result<GenericResponse<LoginResponse>> {
     let db_ref = db
         .lock()
-        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
         .expect("Getting db lock");
     let user = db_ref.find_by_value::<User>(USER_TABLE_NAME.to_string(), "username".to_string(), payload.username)
         .map(|x| x.first().cloned().unwrap())
@@ -40,7 +40,7 @@ pub fn login(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>, manager: Data<&jw
 pub fn register(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Value>> {
     let mut db_ref = db
         .lock()
-        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
         .expect("Getting db lock");
     let users = db_ref
         .find_by_value::<User>(USER_TABLE_NAME.to_string(), "username".to_string(), payload.username.clone())
@@ -49,7 +49,7 @@ pub fn register(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Gene
         )
         .expect("Finding user by value");
     
-    if users.len() > 0 {
+    if !users.is_empty() {
         return Ok(GenericResponse{
             status_code_u16: StatusCode::BAD_REQUEST.as_u16(),
             message: Some("User already exists!".to_string()),
@@ -72,7 +72,7 @@ pub fn register(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Gene
 }
 
 pub fn auth_routes() -> Route {
-    return Route::new()
+    Route::new()
         .at("/login", post(login))
         .at("/register", post(register))
 }

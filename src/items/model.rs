@@ -30,7 +30,7 @@ impl<'a> FromRequest<'a> for ItemCreateBody {
             .unwrap()
             .into_json::<ItemCreateBody>()
             .await
-            .or_else(|_| Err(Error::from_string("Malformed body", StatusCode::BAD_REQUEST)))?;
+            .map_err(|_| Error::from_string("Malformed body", StatusCode::BAD_REQUEST))?;
 
         Ok(body)
     }
@@ -51,7 +51,7 @@ impl<'a> FromRequest<'a> for ItemUpdateBody {
             .unwrap()
             .into_json::<ItemUpdateBody>()
             .await
-            .or_else(|_| Err(Error::from_string("Malformed body", StatusCode::BAD_REQUEST)))?;
+            .map_err(|_| Error::from_string("Malformed body", StatusCode::BAD_REQUEST))?;
 
         Ok(body)
     }
@@ -64,9 +64,9 @@ impl From<Value> for Item {
     }
 }
 
-impl Into<Value> for Item {
-    fn into(self) -> Value {
-        serde_json::to_value(self)
+impl From<Item> for Value {
+    fn from(value: Item) -> Value {
+        serde_json::to_value(value)
             .unwrap()
     }
 }

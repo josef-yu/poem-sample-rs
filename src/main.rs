@@ -1,6 +1,5 @@
 pub mod db;
 pub mod items;
-pub mod app;
 pub mod test;
 pub mod response;
 pub mod auth;

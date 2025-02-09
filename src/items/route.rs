@@ -16,9 +16,11 @@ const ITEM_TABLE_NAME: &str = "item";
 fn get_all_items(db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Vec<Item>>> {
     let db_ref = db
         .lock()
-        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
         .expect("Getting db lock");
-    let items = db_ref.find_all::<Item>(String::from(ITEM_TABLE_NAME)).unwrap_or(Vec::new());
+    let items = db_ref
+        .find_all::<Item>(String::from(ITEM_TABLE_NAME))
+        .unwrap_or_default();
 
     Ok(GenericResponse::<Vec<Item>>{
         message: None,
@@ -31,7 +33,7 @@ fn get_all_items(db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Vec<Item>>
 fn get_item_by_id(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
     let db_ref = db
         .lock()
-        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
         .expect("Getting db lock");
     let item = db_ref.find_by_id::<Item>(String::from(ITEM_TABLE_NAME), id)
         .ok_or(NotFoundError)
@@ -50,7 +52,7 @@ fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Gen
     
     let mut db_ref = db
         .lock()
-        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
         .expect("Getting db lock");
     let id = db_ref.get_increment_last_id(ITEM_TABLE_NAME.to_string()).unwrap().unwrap();
     let to_insert = Item::new(id, payload.name);
@@ -72,7 +74,7 @@ fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Gen
 fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
     let mut db_ref = db
         .lock()
-        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
         .expect("Getting db lock");
     db_ref
         .find_by_id::<Item>(ITEM_TABLE_NAME.to_string(), id)
@@ -95,7 +97,7 @@ fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db
 fn delete_item(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Value>> {
     let mut db_ref = db
         .lock()
-        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
         .expect("Getting db lock");
     db_ref
         .delete_by_id(ITEM_TABLE_NAME.to_string(), id)
@@ -110,7 +112,7 @@ fn delete_item(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<Generic
 
 
 pub fn item_routes() -> Route {
-    return Route::new()
+    Route::new()
         .at("/", get(get_all_items).post(create_item))
         .at(
             "/:id", 

@@ -70,7 +70,7 @@ impl Manager {
             return Ok(data)
         } 
 
-        return result
+        result
     }
 }
 

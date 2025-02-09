@@ -18,8 +18,8 @@ pub const TEST_USERNAME: &str = "username";
 pub const TEST_PASSWORD: &str = "password";
 pub const TEST_PERMISSION: &str = "MUTATE";
 
-pub fn run_with_file_create_teardown<T>(test: T) -> ()
-    where T: FnOnce() -> () + panic::UnwindSafe
+pub fn run_with_file_create_teardown<T>(test: T)
+    where T: FnOnce() + panic::UnwindSafe
 {
     let _ = File::create(TEST_FILE_NAME);
 
@@ -33,7 +33,7 @@ pub fn run_with_file_create_teardown<T>(test: T) -> ()
 }
 
 
-pub async fn async_run_with_file_create_teardown<T, U>(test: T) -> ()
+pub async fn async_run_with_file_create_teardown<T, U>(test: T)
     where T: FnOnce() -> U + panic::UnwindSafe,
         U: Future<Output = ()>
 {

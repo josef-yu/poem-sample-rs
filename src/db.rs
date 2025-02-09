@@ -28,8 +28,11 @@ impl Db {
         let path_exists = Path::new(&file_name).exists();
 
         let mut file = std::fs::OpenOptions::new()
-            .write(true).read(true).create(true).open(file_name)?;
-
+            .write(true)
+            .read(true)
+            .create(true)
+            .truncate(false)
+            .open(file_name)?;
 
         let mut tables: HashMap<String, TableData> = HashMap::new();
 
@@ -38,7 +41,7 @@ impl Db {
 
             file.read_to_string(&mut contents).expect("Reading db file contents");
 
-            if contents.len() > 0 {
+            if !contents.is_empty() {
                 tables = serde_json::from_str(&contents).expect("Parsing db file json");
             }
         }
@@ -64,7 +67,7 @@ impl Db {
     fn flush(&mut self) -> DynaResult<'_, ()> {
         let contents = serde_json::to_string(&self.tables).expect("Flushing to db file");
 
-        return self.write(contents)
+        self.write(contents)
     }
 
     pub fn add_table(&mut self, table_name: String, is_recreate: bool) -> DynaResult<'_, ()> {
@@ -98,7 +101,7 @@ impl Db {
             );
         }
 
-        return None
+        None
     }
 
     pub fn find_by_value<T>(&self, table_name: String, column: String, value: String) -> Option<Vec<T>> 
@@ -109,7 +112,6 @@ impl Db {
                 table
                     .data
                     .values()
-                    .cloned()
                     .filter(|x| {
                         let result = x.get(column.clone());
                         
@@ -117,14 +119,15 @@ impl Db {
                             return *val == *value
                         }
 
-                        return false
+                        false
                     })
+                    .cloned()
                     .map(|x| serde_json::from_value::<T>(x).unwrap())
                     .collect()
             );
         }
 
-        return None
+        None
     }
 
     pub fn find_by_id<T>(&self, table_name: String, id: u32) -> Option<T> 
@@ -138,7 +141,7 @@ impl Db {
                 .map(|x| serde_json::from_value::<T>(x).unwrap());
         }
 
-        return None
+        None
     }
 
     pub fn get_increment_last_id(&mut self, table_name: String) -> DynaResult<'_, Option<u32>> {
@@ -150,7 +153,7 @@ impl Db {
         }
 
         println!("Table does not exist! Cannot get next id.");
-        return Ok(None)
+        Ok(None)
     }
 
     pub fn insert_or_update<T>(&mut self, table_name: String, id: u32, data: T) -> DynaResult<'_, Option<T>> 
@@ -162,7 +165,7 @@ impl Db {
             return Ok(Some(data))
         }
 
-        return Ok(None)
+        Ok(None)
     }
 
     pub fn delete_by_id(&mut self, table_name: String, id: u32) -> DynaResult<'_, Option<Value>> {
@@ -172,7 +175,7 @@ impl Db {
             return Ok(data)
         }
 
-        return Ok(None)
+        Ok(None)
     }
 
     pub fn delete_all(&mut self, table_name: String) -> DynaResult<'_, bool> {
@@ -182,7 +185,7 @@ impl Db {
             return Ok(true)
         }
 
-        return Ok(false)
+        Ok(false)
     }
  }
 

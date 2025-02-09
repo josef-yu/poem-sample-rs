@@ -38,7 +38,7 @@ impl<'a> FromRequest<'a> for UserFormBody {
                 .unwrap()
                 .into_json::<UserFormBody>()
                 .await
-                .or_else(|_| Err(Error::from_string("Malformed body", StatusCode::BAD_REQUEST)))?;
+                .map_err(|_| Error::from_string("Malformed body", StatusCode::BAD_REQUEST))?;
 
         Ok(body)
     }
@@ -49,8 +49,8 @@ pub struct LoginResponse {
     pub token: String
 }
 
-impl Into<Value> for LoginResponse {
-    fn into(self) -> Value {
-        serde_json::to_value(self).unwrap()
+impl From<LoginResponse> for Value {
+    fn from(value: LoginResponse) -> Self {
+        serde_json::to_value(value).unwrap()
     }
 }

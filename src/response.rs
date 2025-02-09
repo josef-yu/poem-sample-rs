@@ -31,7 +31,7 @@ impl<T> IntoResponse for GenericResponse<T>
             map.insert("message".to_string(), Value::String(message));
         }
 
-        if map.len() > 0 {
+        if !map.is_empty() {
             return response.body(
                 Body::from_json(map)
                     .unwrap()   
