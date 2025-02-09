@@ -8,12 +8,13 @@ use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct TableData {
     next_id: u32,
     data: BTreeMap<u32, Value>
 }
 
+#[derive(Clone)]
 pub struct Db {
     file: Arc<Mutex<File>>,
     tables: HashMap<String, TableData>
@@ -35,10 +36,10 @@ impl Db {
         if path_exists {
             let mut contents = String::new();
 
-            file.read_to_string(&mut contents).expect("Unable to read file!");
+            file.read_to_string(&mut contents).expect("Reading db file contents");
 
             if contents.len() > 0 {
-                tables = serde_json::from_str(&contents).expect("Unreadable JSON!");
+                tables = serde_json::from_str(&contents).expect("Parsing db file json");
             }
         }
 
@@ -61,7 +62,7 @@ impl Db {
     }
 
     fn flush(&mut self) -> DynaResult<'_, ()> {
-        let contents = serde_json::to_string(&self.tables).expect("Failed to flush to file!");
+        let contents = serde_json::to_string(&self.tables).expect("Flushing to db file");
 
         return self.write(contents)
     }
