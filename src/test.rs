@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use futures::FutureExt;
 use poem::middleware::{AddData, Middleware};
 use poem::test::TestClient;
-use poem::{Endpoint, EndpointExt, IntoEndpoint, Route};
+use poem::{Endpoint, EndpointExt, IntoEndpoint};
 use serde_json::Value;
 
 use crate::auth;
@@ -47,17 +47,6 @@ pub async fn async_run_with_file_create_teardown<T, U>(test: T)
     let _ = std::fs::remove_file(TEST_FILE_NAME);
 
     assert!(result.is_ok())
-}
-
-pub struct TestRouteDetail {
-    pub table_name: String,
-    pub route: Route,
-    pub nest_path_name: String
-}
-
-pub struct TestInitialData {
-    pub table_name: String,
-    pub data: Vec<Value>
 }
 
 pub struct ApiTestClient<E> {
