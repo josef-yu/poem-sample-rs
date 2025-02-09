@@ -101,6 +101,32 @@ impl Db {
         return None
     }
 
+    pub fn find_by_value<T>(&self, table_name: String, column: String, value: String) -> Option<Vec<T>> 
+        where T: DeserializeOwned
+    {
+        if let Some(table) = self.tables.get(&table_name) {
+            return Some(
+                table
+                    .data
+                    .values()
+                    .cloned()
+                    .filter(|x| {
+                        let result = x.get(column.clone());
+                        
+                        if let Some(val) = result {
+                            return *val == *value
+                        }
+
+                        return false
+                    })
+                    .map(|x| serde_json::from_value::<T>(x).unwrap())
+                    .collect()
+            );
+        }
+
+        return None
+    }
+
     pub fn find_by_id<T>(&self, table_name: String, id: u32) -> Option<T> 
         where T: DeserializeOwned
     {
@@ -285,5 +311,20 @@ impl Db {
             assert_eq!(all_result.len(), 0);
 
         });
+    }
+
+    #[test]
+    fn test_find_by_value() {
+        let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
+        let table_name = String::from("sample");
+        db.add_table(table_name.clone(), true).unwrap();
+
+        let id = db.get_increment_last_id(table_name.clone()).unwrap().unwrap();
+        let to_insert: Value = json!({"id": id, "value": "sample"});
+        db.insert_or_update::<Value>(table_name.clone(), id, to_insert.clone()).unwrap();
+
+        let result = db.find_by_value::<Value>(table_name.clone(), "value".to_string(), "sample".to_string()).unwrap();
+
+        assert_eq!(result.len(), 1)
     }
  }
