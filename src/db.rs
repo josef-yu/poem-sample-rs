@@ -194,6 +194,23 @@ impl Db {
 
     use super::*;
 
+    const TABLE_NAME: &str = "sample";
+
+    fn init_db() -> Db {
+        let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
+        let table_name = String::from(TABLE_NAME);
+        db.add_table(table_name.clone(), true).unwrap();
+
+        return db
+    }
+
+    fn upsert_item(db: &mut Db, value: &str) -> (u32, Value) {
+        let id = db.get_increment_last_id(TABLE_NAME.to_string()).unwrap().unwrap();
+        let to_insert: Value = json!({"id": id, "value": value});
+        db.insert_or_update::<Value>(TABLE_NAME.to_string(), id, to_insert.clone()).unwrap();
+
+        return (id, to_insert)
+    }
 
     #[test]
     fn test_init() {
@@ -207,11 +224,9 @@ impl Db {
     #[test]
     fn test_add_table() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            let table_name = String::from("sample");
-            db.add_table(table_name.clone(), true).unwrap();
+            let db = init_db();
 
-            let result = db.find_all::<Value>(table_name);
+            let result = db.find_all::<Value>(TABLE_NAME.to_string());
 
             assert_eq!(result.is_some(), true);
         });
@@ -220,44 +235,31 @@ impl Db {
     #[test]
     fn test_insert() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            let table_name = String::from("sample");
-            db.add_table(table_name.clone(), true).unwrap();
+            let mut db = init_db();
+            let (id, inserted) = upsert_item(&mut db, "sample");
 
-            let id = db.get_increment_last_id(table_name.clone()).unwrap().unwrap();
-            let to_insert: Value = json!({"id": id, "value": "sample"});
-            db.insert_or_update::<Value>(table_name.clone(), id, to_insert.clone()).unwrap();
+            let data = db.find_by_id::<Value>(TABLE_NAME.to_string(), id).unwrap();
+            assert_eq!(data, inserted);
 
-            let data = db.find_by_id::<Value>(table_name.clone(), id).unwrap();
-            assert_eq!(data, to_insert);
-
-            let another_id = db.get_increment_last_id(table_name.clone()).unwrap().unwrap();
-            let another_to_insert: Value = json!({"id": another_id, "value": "another value"});
-            db.insert_or_update::<Value>(table_name.clone(), another_id, another_to_insert.clone()).unwrap();
-
-            let another_data = db.find_by_id::<Value>(table_name.clone(), another_id).unwrap(); 
-            assert_eq!(another_data, another_to_insert)
+            let (another_id, another_inserted) = upsert_item(&mut db, "another value");
+            let another_data = db.find_by_id::<Value>(TABLE_NAME.to_string(), another_id).unwrap(); 
+            assert_eq!(another_data, another_inserted)
         });
     }
 
     #[test]
     fn test_update() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            let table_name = String::from("sample");
-            db.add_table(table_name.clone(), true).unwrap();
+            let mut db = init_db();
 
-            let id = db.get_increment_last_id(table_name.clone()).unwrap().unwrap();
-            let to_insert: Value = json!({"id": id, "value": "sample"});
-            db.insert_or_update::<Value>(table_name.clone(), id, to_insert.clone()).unwrap();
-
-            let data = db.find_by_id::<Value>(table_name.clone(), id).unwrap();
-            assert_eq!(data, to_insert);
+            let (id, inserted) = upsert_item(&mut db, "sample");
+            let data = db.find_by_id::<Value>(TABLE_NAME.to_string(), id).unwrap();
+            assert_eq!(data, inserted);
 
             let to_update: Value = json!({"id": id, "value": "updated"});
-            db.insert_or_update::<Value>(table_name.clone(), id, to_update.clone()).unwrap();
+            db.insert_or_update::<Value>(TABLE_NAME.to_string(), id, to_update.clone()).unwrap();
 
-            let updated_data = db.find_by_id::<Value>(table_name.clone(), id).unwrap(); 
+            let updated_data = db.find_by_id::<Value>(TABLE_NAME.to_string(), id).unwrap(); 
             assert_eq!(updated_data, to_update)
         });
     }
@@ -265,20 +267,16 @@ impl Db {
     #[test]
     fn test_delete() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            let table_name = String::from("sample");
-            db.add_table(table_name.clone(), true).unwrap();
+            let mut db = init_db();
 
-            let id = db.get_increment_last_id(table_name.clone()).unwrap().unwrap();
-            let to_insert: Value = json!({"id": id, "value": "sample"});
-            db.insert_or_update::<Value>(table_name.clone(), id, to_insert.clone()).unwrap();
+            let (id, inserted) = upsert_item(&mut db, "sample");
 
-            let data = db.find_by_id::<Value>(table_name.clone(), id).unwrap();
-            assert_eq!(data, to_insert);
+            let data = db.find_by_id::<Value>(TABLE_NAME.to_string(), id).unwrap();
+            assert_eq!(data, inserted);
 
-            db.delete_by_id(table_name.clone(), id).unwrap();
+            db.delete_by_id(TABLE_NAME.to_string(), id).unwrap();
 
-            let data = db.find_by_id::<Value>(table_name.clone(), id);
+            let data = db.find_by_id::<Value>(TABLE_NAME.to_string(), id);
             assert_eq!(data.is_none(), true); 
         });
     }
@@ -286,27 +284,20 @@ impl Db {
     #[test]
     fn test_delete_all() {
         run_with_file_create_teardown(|| {
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            let table_name = String::from("sample");
-            db.add_table(table_name.clone(), true).unwrap();
+            let mut db = init_db();
 
-            let id = db.get_increment_last_id(table_name.clone()).unwrap().unwrap();
-            let to_insert: Value = json!({"id": id, "value": "sample"});
-            db.insert_or_update::<Value>(table_name.clone(), id, to_insert.clone()).unwrap();
+            let (id, inserted) = upsert_item(&mut db, "sample");
 
-            let data = db.find_by_id::<Value>(table_name.clone(), id).unwrap();
-            assert_eq!(data, to_insert);
+            let data = db.find_by_id::<Value>(TABLE_NAME.to_string(), id).unwrap();
+            assert_eq!(data, inserted);
 
-            let another_id = db.get_increment_last_id(table_name.clone()).unwrap().unwrap();
-            let another_to_insert: Value = json!({"id": another_id, "value": "another value"});
-            db.insert_or_update::<Value>(table_name.clone(), another_id, another_to_insert.clone()).unwrap();
+            let (another_id, another_inserted) = upsert_item(&mut db, "another value");
+            let another_data = db.find_by_id::<Value>(TABLE_NAME.to_string(), another_id).unwrap(); 
+            assert_eq!(another_data, another_inserted);
 
-            let another_data = db.find_by_id::<Value>(table_name.clone(), another_id).unwrap(); 
-            assert_eq!(another_data, another_to_insert);
+            db.delete_all(TABLE_NAME.to_string()).unwrap();
 
-            db.delete_all(table_name.clone()).unwrap();
-
-            let all_result = db.find_all::<Value>(table_name.clone()).unwrap();
+            let all_result = db.find_all::<Value>(TABLE_NAME.to_string()).unwrap();
 
             assert_eq!(all_result.len(), 0);
 
@@ -315,15 +306,10 @@ impl Db {
 
     #[test]
     fn test_find_by_value() {
-        let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-        let table_name = String::from("sample");
-        db.add_table(table_name.clone(), true).unwrap();
+        let mut db = init_db();
+        upsert_item(&mut db, "sample");
 
-        let id = db.get_increment_last_id(table_name.clone()).unwrap().unwrap();
-        let to_insert: Value = json!({"id": id, "value": "sample"});
-        db.insert_or_update::<Value>(table_name.clone(), id, to_insert.clone()).unwrap();
-
-        let result = db.find_by_value::<Value>(table_name.clone(), "value".to_string(), "sample".to_string()).unwrap();
+        let result = db.find_by_value::<Value>(TABLE_NAME.to_string(), "value".to_string(), "sample".to_string()).unwrap();
 
         assert_eq!(result.len(), 1)
     }

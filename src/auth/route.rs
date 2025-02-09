@@ -38,12 +38,16 @@ pub fn login(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>, manager: Data<&jw
 
 #[handler]
 pub fn register(payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Value>> {
-    let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
+    let mut db_ref = db
+        .lock()
+        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .expect("Getting db lock");
     let users = db_ref
         .find_by_value::<User>(USER_TABLE_NAME.to_string(), "username".to_string(), payload.username.clone())
         .ok_or(
             Error::from_status(StatusCode::UNAUTHORIZED)
-        )?;
+        )
+        .expect("Finding user by value");
     
     if users.len() > 0 {
         return Ok(GenericResponse{
@@ -76,45 +80,53 @@ pub fn auth_routes() -> Route {
 
 #[cfg(test)]
 mod tests {
-    use poem::{middleware::AddData, test::TestClient, EndpointExt, Middleware};
+    use poem::Endpoint;
 
-    use crate::{auth, test::{async_run_with_file_create_teardown, TEST_FILE_NAME}};
+    use crate::test::{async_run_with_file_create_teardown, ApiTestClient, TEST_PASSWORD, TEST_USERNAME};
 
     use super::*;
+
+    fn init_client() -> ApiTestClient<impl Endpoint> {
+        let routes = Route::new().nest(
+            "/", auth_routes()
+        );
+        let test_client = ApiTestClient::init(routes);
+        {
+            let mut db = test_client.db.lock().unwrap();
+            db.add_table(USER_TABLE_NAME.to_string(), false).unwrap();
+            db.delete_all(USER_TABLE_NAME.to_string()).unwrap();
+        }
+
+        return test_client
+    }
+
+    fn insert_user(db: &mut Db, username: &str, password: &str) {
+        let id = db.get_increment_last_id(USER_TABLE_NAME.to_string()).unwrap().unwrap();
+        let to_insert = User::new(
+            id, 
+            username.to_string(), 
+            password.to_string(), 
+            vec!["MUTATE".to_string()]
+        );
+        db
+            .insert_or_update(USER_TABLE_NAME.to_string(), id, to_insert)
+            .unwrap()
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn test_login() {
         async_run_with_file_create_teardown(|| async {
-            let routes = auth_routes();
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            db.add_table(USER_TABLE_NAME.to_string(), true).unwrap();
+            let test_client = init_client();
+            {
+                let mut db = test_client.db.lock().unwrap();
+                insert_user(&mut db, TEST_USERNAME, TEST_PASSWORD);
+            }
 
-            let username = "username".to_string();
-            let password = "password".to_string();
-
-            let id = db.get_increment_last_id(USER_TABLE_NAME.to_string()).unwrap().unwrap();
-            let to_insert = User::new(
-                id, 
-                username.clone(), 
-                password.clone(), 
-                vec!["MUTATE".to_string()]
-            );
-            db
-                .insert_or_update(USER_TABLE_NAME.to_string(), id, to_insert)
-                .unwrap()
-                .unwrap();
-
-            let arc_db = Arc::new(Mutex::new(db));
-            let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
-            let client = TestClient::new(
-                Route::new().nest("/", routes)
-                    .with(AddData::new(arc_db).combine(AddData::new(jwt_manager)))
-            );
-
-            let response = client.post("/login")
+            let response = test_client.client.post("/login")
                 .body_json(&UserFormBody{
-                    username,
-                    password
+                    username: TEST_USERNAME.to_string(),
+                    password: TEST_PASSWORD.to_string()
                 })
                 .send()
                 .await;
@@ -126,22 +138,12 @@ mod tests {
     #[tokio::test]
     async fn test_register() {
         async_run_with_file_create_teardown(|| async {
-            let routes = auth_routes();
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            db.add_table(USER_TABLE_NAME.to_string(), false).unwrap();
-            db.delete_all(USER_TABLE_NAME.to_string()).unwrap();
-    
-            let arc_db = Arc::new(Mutex::new(db));
-    
-            let client = TestClient::new(
-                Route::new().nest("/", routes)
-                    .with(AddData::new(arc_db))
-            );
+            let test_client = init_client();
 
-            let response = client.post("/register")
+            let response = test_client.client.post("/register")
                 .body_json(&UserFormBody{ 
-                    username: "username".to_string(),
-                    password: "password".to_string()
+                    username: TEST_USERNAME.to_string(),
+                    password: TEST_PASSWORD.to_string()
                 })
                 .send()
                 .await;

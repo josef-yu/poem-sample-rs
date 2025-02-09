@@ -1,11 +1,22 @@
 use std::future::Future;
 use std::panic::{self, AssertUnwindSafe};
 use std::fs::File;
+use std::sync::{Arc, Mutex};
 
 use futures::FutureExt;
+use poem::middleware::{AddData, Middleware};
+use poem::test::TestClient;
+use poem::{Endpoint, EndpointExt, IntoEndpoint, Route};
+use serde_json::Value;
+
+use crate::auth;
+use crate::db::Db;
 
 
 pub static TEST_FILE_NAME: &str = "./test-data.json";
+pub const TEST_USERNAME: &str = "username";
+pub const TEST_PASSWORD: &str = "password";
+pub const TEST_PERMISSION: &str = "MUTATE";
 
 pub fn run_with_file_create_teardown<T>(test: T) -> ()
     where T: FnOnce() -> () + panic::UnwindSafe
@@ -35,4 +46,50 @@ pub async fn async_run_with_file_create_teardown<T, U>(test: T) -> ()
     let _ = std::fs::remove_file(TEST_FILE_NAME);
 
     assert!(result.is_ok())
+}
+
+pub struct TestRouteDetail {
+    pub table_name: String,
+    pub route: Route,
+    pub nest_path_name: String
+}
+
+pub struct TestInitialData {
+    pub table_name: String,
+    pub data: Vec<Value>
+}
+
+pub struct ApiTestClient<E> {
+    pub db: Arc<Mutex<Db>>,
+    pub client: TestClient<E>,
+    pub jwt_manager: auth::jwt::Manager,
+    pub token: String
+}
+
+impl<E: Endpoint> ApiTestClient<E> {
+    pub fn init<T>(route: T) -> ApiTestClient<impl Endpoint> 
+        where T: IntoEndpoint<Endpoint = E>
+    {
+        let db = Db::init(TEST_FILE_NAME.to_string()).unwrap();
+        let arc_db = Arc::new(Mutex::new(db));
+
+        let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
+        let jwt_middleware = auth::middleware::JwtMiddleware{ manager: jwt_manager.clone() };
+        let jwt_data = jwt_manager.create_token_data(TEST_USERNAME.to_string(), vec![TEST_PERMISSION.to_string()]);
+        let token = jwt_manager.encode(jwt_data).unwrap();
+
+        let client = TestClient::new(
+            route.with(
+    jwt_middleware
+                    .combine(AddData::new(arc_db.clone()))
+                    .combine(AddData::new(jwt_manager.clone()))
+            ));
+
+        ApiTestClient {
+            db: arc_db,
+            jwt_manager,
+            client,
+            token
+        }
+    }
 }

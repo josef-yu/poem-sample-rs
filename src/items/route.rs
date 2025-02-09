@@ -14,7 +14,10 @@ const ITEM_TABLE_NAME: &str = "item";
 
 #[handler]
 fn get_all_items(db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Vec<Item>>> {
-    let db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
+    let db_ref = db
+        .lock()
+        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .expect("Getting db lock");
     let items = db_ref.find_all::<Item>(String::from(ITEM_TABLE_NAME)).unwrap_or(Vec::new());
 
     Ok(GenericResponse::<Vec<Item>>{
@@ -26,9 +29,13 @@ fn get_all_items(db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Vec<Item>>
 
 #[handler]
 fn get_item_by_id(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
-    let db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
+    let db_ref = db
+        .lock()
+        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .expect("Getting db lock");
     let item = db_ref.find_by_id::<Item>(String::from(ITEM_TABLE_NAME), id)
-        .ok_or(NotFoundError)?;
+        .ok_or(NotFoundError)
+        .expect("Getting user by id");
 
     Ok(GenericResponse::<Item>{
         message: None,
@@ -41,7 +48,10 @@ fn get_item_by_id(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<Gene
 #[handler]
 fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
     
-    let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
+    let mut db_ref = db
+        .lock()
+        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .expect("Getting db lock");
     let id = db_ref.get_increment_last_id(ITEM_TABLE_NAME.to_string()).unwrap().unwrap();
     let to_insert = Item::new(id, payload.name);
     let item = db_ref
@@ -60,10 +70,14 @@ fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<Gen
 #[poem_grants::protect("MUTATE")]
 #[handler]
 fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
-    let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
+    let mut db_ref = db
+        .lock()
+        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .expect("Getting db lock");
     db_ref
         .find_by_id::<Item>(ITEM_TABLE_NAME.to_string(), id)
-        .ok_or(NotFoundError)?;
+        .ok_or(NotFoundError)
+        .expect("Finding item by id to update");
     let to_update = Item::new(id, payload.name);
     db_ref
         .insert_or_update(ITEM_TABLE_NAME.to_string(), id, to_update.clone())
@@ -79,7 +93,10 @@ fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db
 #[poem_grants::protect("MUTATE")]
 #[handler]
 fn delete_item(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Value>> {
-    let mut db_ref = db.lock().or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))?;
+    let mut db_ref = db
+        .lock()
+        .or_else(|_| Err(Error::from_status(StatusCode::INTERNAL_SERVER_ERROR)))
+        .expect("Getting db lock");
     db_ref
         .delete_by_id(ITEM_TABLE_NAME.to_string(), id)
         .unwrap();
@@ -103,10 +120,9 @@ pub fn item_routes() -> Route {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-    use poem::{http::StatusCode, middleware::AddData, test::TestClient, EndpointExt, Middleware};
+    use poem::{http::StatusCode, Endpoint};
 
-    use crate::{auth::{self, model::User, route::USER_TABLE_NAME}, test::{async_run_with_file_create_teardown, TEST_FILE_NAME}};
+    use crate::test::{async_run_with_file_create_teardown, ApiTestClient};
 
     use super::*;
 
@@ -118,24 +134,31 @@ mod tests {
         db.insert_or_update(table_name.clone(), id, to_insert).unwrap();
     }
 
+    fn init_client() -> ApiTestClient<impl Endpoint> {
+        let routes = Route::new().nest(
+            "/items", item_routes()
+        );
+        let test_client = ApiTestClient::init(routes);
+        {
+            let mut db = test_client.db.lock().unwrap();
+            db.add_table("item".to_string(), false).unwrap();
+            db.delete_all("item".to_string()).unwrap();
+        }
+
+        return test_client
+    }
+
     #[tokio::test]
     async fn test_get_all_items() {
         async_run_with_file_create_teardown(|| async {
-            let routes = item_routes();
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            db.delete_all("item".to_string()).unwrap();
-    
-            insert_item(&mut db, String::from("item 1"));
-            insert_item(&mut db, String::from("item 2"));
-            insert_item(&mut db, String::from("item 3"));
-    
-            let arc_db = Arc::new(Mutex::new(db));
-    
-            let client = TestClient::new(
-                Route::new().nest("/items", routes)
-                    .with(AddData::new(arc_db))
-            );
-            let response = client.get("/items").send().await;
+            let test_client = init_client();
+            {
+                let mut db = test_client.db.lock().unwrap();
+                insert_item(&mut db, String::from("item 1"));
+                insert_item(&mut db, String::from("item 2"));
+                insert_item(&mut db, String::from("item 3"));
+            }
+            let response = test_client.client.get("/items").send().await;
     
             let expected_data = serde_json::json!({
                 "data": [
@@ -162,22 +185,15 @@ mod tests {
     #[tokio::test]
     async fn test_get_item_by_id() {
         async_run_with_file_create_teardown(|| async {
-            let routes = item_routes();
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            db.delete_all("item".to_string()).unwrap();
+            let test_client = init_client();
+            {
+                let mut db = test_client.db.lock().unwrap();
+                insert_item(&mut db, String::from("item 1"));
+                insert_item(&mut db, String::from("item 2"));
+                insert_item(&mut db, String::from("item 3"));
+            }
     
-            insert_item(&mut db, String::from("item 1"));
-            insert_item(&mut db, String::from("item 2"));
-            insert_item(&mut db, String::from("item 3"));
-    
-            let arc_db = Arc::new(Mutex::new(db));
-    
-            let client = TestClient::new(
-                Route::new().nest("/items", routes)
-                    .with(AddData::new(arc_db))
-            );
-    
-            let response = client.get("/items/2").send().await;
+            let response = test_client.client.get("/items/2").send().await;
     
             let expected_data = serde_json::json!({
                 "data": {
@@ -193,19 +209,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_item_by_id_not_found() {
-        async_run_with_file_create_teardown(|| async {
-            let routes = item_routes();
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            db.delete_all("item".to_string()).unwrap();
-    
-            let arc_db = Arc::new(Mutex::new(db));
-    
-            let client = TestClient::new(
-                Route::new().nest("/items", routes)
-                    .with(AddData::new(arc_db))
-            );
-    
-            let response = client.get("/items/2").send().await;
+        async_run_with_file_create_teardown(|| async {      
+            let test_client = init_client();
+            let response = test_client.client.get("/items/99").send().await;
     
             response.assert_status(StatusCode::NOT_FOUND);
         }).await;
@@ -213,42 +219,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_item() {
-        async_run_with_file_create_teardown(|| async {            
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            db.add_table("item".to_string(), false).unwrap();
-            db.delete_all("item".to_string()).unwrap();
-            db.add_table(USER_TABLE_NAME.to_string(), true).unwrap();
-
-            let username = "username".to_string();
-            let password = "password".to_string();
-            let permissions = vec!["MUTATE".to_string()];
-
-            let id = db.get_increment_last_id(USER_TABLE_NAME.to_string()).unwrap().unwrap();
-            let to_insert = User::new(
-                id, 
-                username.clone(), 
-                password.clone(), 
-                permissions.clone()
-            );
-            db
-                .insert_or_update(USER_TABLE_NAME.to_string(), id, to_insert)
-                .unwrap()
-                .unwrap();
-
-            let arc_db = Arc::new(Mutex::new(db));
-            let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
-            let jwt_middleware = auth::middleware::JwtMiddleware{ manager: jwt_manager.clone() };
-            let jwt_data = jwt_manager.create_token_data(username, permissions);
-            let token = jwt_manager.encode(jwt_data).unwrap();
-
-            let client = TestClient::new(
-                Route::new().nest("/items", item_routes())
-                    .with(jwt_middleware.combine(AddData::new(arc_db)).combine(AddData::new(jwt_manager)))
-            );
+        async_run_with_file_create_teardown(|| async {      
+            let test_client = init_client();
     
-            let response = client.post("/items")
+            let response = test_client.client.post("/items")
                 .body_json(&ItemCreateBody{ name: "item 1".to_string() })
-                .header("Authorization", format!("Bearer {}", token))
+                .header("Authorization", format!("Bearer {}", test_client.token))
                 .send()
                 .await;
     
@@ -267,50 +243,20 @@ mod tests {
     #[tokio::test]
     async fn test_put_item() {
         async_run_with_file_create_teardown(|| async {
+            let test_client = init_client();
 
-            let routes = item_routes();
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            db.add_table("item".to_string(), false).unwrap();
-            db.delete_all("item".to_string()).unwrap();
+            {
+                let mut db = test_client.db.lock().unwrap();
+                insert_item(&mut db, "item 1".to_string());
+            }
     
-            insert_item(&mut db, "item 1".to_string());
-
-            db.add_table(USER_TABLE_NAME.to_string(), true).unwrap();
-
-            let username = "username".to_string();
-            let password = "password".to_string();
-            let permissions = vec!["MUTATE".to_string()];
-
-            let id = db.get_increment_last_id(USER_TABLE_NAME.to_string()).unwrap().unwrap();
-            let to_insert = User::new(
-                id, 
-                username.clone(), 
-                password.clone(), 
-                permissions.clone()
-            );
-            db
-                .insert_or_update(USER_TABLE_NAME.to_string(), id, to_insert)
-                .unwrap()
-                .unwrap();
-
-            let arc_db = Arc::new(Mutex::new(db));
-            let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
-            let jwt_middleware = auth::middleware::JwtMiddleware{ manager: jwt_manager.clone() };
-            let jwt_data = jwt_manager.create_token_data(username, permissions);
-            let token = jwt_manager.encode(jwt_data).unwrap();
-        
-            let client = TestClient::new(
-                Route::new().nest("/items", routes)
-                    .with(jwt_middleware.combine(AddData::new(arc_db)).combine(AddData::new(jwt_manager)))
-            );
-    
-            let put_response = client.put("/items/1")
+            let put_response = test_client.client.put("/items/1")
                 .body_json(&ItemUpdateBody{ name: "item 1 updated".to_string() })
-                .header("Authorization", format!("Bearer {}", token))
+                .header("Authorization", format!("Bearer {}", test_client.token))
                 .send()
                 .await;
     
-            let get_response = client.get("/items/1")
+            let get_response = test_client.client.get("/items/1")
                 .send()
                 .await;
             
@@ -323,44 +269,10 @@ mod tests {
     #[tokio::test]
     async fn test_delete_item() {
         async_run_with_file_create_teardown(|| async {
-            let routes = item_routes();
-            let mut db = Db::init(String::from(TEST_FILE_NAME)).unwrap();
-            db.add_table("item".to_string(), false).unwrap();
-            db.delete_all("item".to_string()).unwrap();
-    
-            insert_item(&mut db, "item 1".to_string());
+            let test_client = init_client();
 
-            db.add_table(USER_TABLE_NAME.to_string(), true).unwrap();
-
-            let username = "username".to_string();
-            let password = "password".to_string();
-            let permissions = vec!["MUTATE".to_string()];
-
-            let id = db.get_increment_last_id(USER_TABLE_NAME.to_string()).unwrap().unwrap();
-            let to_insert = User::new(
-                id, 
-                username.clone(), 
-                password.clone(), 
-                permissions.clone()
-            );
-            db
-                .insert_or_update(USER_TABLE_NAME.to_string(), id, to_insert)
-                .unwrap()
-                .unwrap();
-
-            let arc_db = Arc::new(Mutex::new(db));
-            let jwt_manager = auth::jwt::Manager::init("secret".to_string(), 24);
-            let jwt_middleware = auth::middleware::JwtMiddleware{ manager: jwt_manager.clone() };
-            let jwt_data = jwt_manager.create_token_data(username, permissions);
-            let token = jwt_manager.encode(jwt_data).unwrap();
-        
-            let client = TestClient::new(
-                Route::new().nest("/items", routes)
-                    .with(jwt_middleware.combine(AddData::new(arc_db)).combine(AddData::new(jwt_manager)))
-            );
-    
-            let response = client.delete("/items/1")
-                .header("Authorization", format!("Bearer {}", token))
+            let response = test_client.client.delete("/items/1")
+                .header("Authorization", format!("Bearer {}", test_client.token))
                 .send()
                 .await;
 
