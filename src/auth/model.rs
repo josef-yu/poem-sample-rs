@@ -1,4 +1,3 @@
-use poem::{http::StatusCode, Error, FromRequest, Result};
 use poem_openapi::{payload::Json, Object};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -29,22 +28,6 @@ impl User {
 pub struct UserFormBody {
     pub username: String,
     pub password: String
-}
-
-impl<'a> FromRequest<'a> for UserFormBody {
-    async fn from_request(
-            _: &'a poem::Request,
-            body: &mut poem::RequestBody,
-        ) -> Result<Self> {
-            let body = body
-                .take()
-                .unwrap()
-                .into_json::<UserFormBody>()
-                .await
-                .map_err(|_| Error::from_string("Malformed body", StatusCode::BAD_REQUEST))?;
-
-        Ok(body)
-    }
 }
 
 #[derive(Serialize, Deserialize, Object)]

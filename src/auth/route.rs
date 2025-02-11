@@ -16,16 +16,16 @@ pub struct AuthApi;
 impl AuthApi {
 
     #[oai(path = "/login", method = "post")]
-    pub async fn login(&self, payload: UserFormBody, db: Data<&Arc<Mutex<Db>>>, manager: Data<&jwt::Manager>) -> Result<CreateResponse<LoginResponse>> {
+    pub async fn login(&self, payload: Json<UserFormBody>, db: Data<&Arc<Mutex<Db>>>, manager: Data<&jwt::Manager>) -> Result<CreateResponse<LoginResponse>> {
         let db_ref = db
             .lock()
             .map_err(|_| GenericError::DbLock)?;
 
-        let user = db_ref.find_by_value::<User>(USER_TABLE_NAME.to_string(), "username".to_string(), payload.username)
+        let user = db_ref.find_by_value::<User>(USER_TABLE_NAME.to_string(), "username".to_string(), payload.0.username)
             .map(|x| x.first().cloned().unwrap())
             .ok_or(GenericError::not_authorized())?;
         
-        if user.password != payload.password {
+        if user.password != payload.0.password {
             return Err(GenericError::not_authorized().into())
         }
 
