@@ -1,128 +1,112 @@
 use std::sync::{Arc, Mutex};
 
-use poem::http::StatusCode;
-use poem::Error;
-use poem::{get, handler, Route, Result, error::NotFoundError};
+use poem::Result;
 use poem::web::{Data, Path};
-use serde_json::Value;
+use poem_openapi::payload::Json;
+use poem_openapi::OpenApi;
 
 use crate::db::Db;
-use crate::items::model::{Item, ItemCreateBody, ItemUpdateBody};
-use crate::response::GenericResponse;
+use crate::items::model::{Item, ItemCreateBody, ItemUpdateBody, ItemNotFound};
+use crate::response::{CreateResponse, DeleteResponse, FetchResponse, GenericError, UpdateResponse};
+
+use super::model::ItemDelete;
 
 const ITEM_TABLE_NAME: &str = "item";
 
-#[handler]
-fn get_all_items(db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Vec<Item>>> {
-    let db_ref = db
+pub struct ItemsApi;
+
+#[poem_grants::open_api]
+#[OpenApi(prefix_path = "/items")]
+impl ItemsApi {
+
+    #[oai(path = "/", method = "get")]
+    pub async fn get_all_items(&self, db: Data<&Arc<Mutex<Db>>>) -> Result<FetchResponse<Vec<Item>>> {
+        let db_ref = db
+            .lock()
+            .map_err(|_| GenericError::DbLock)?;
+
+        let items = db_ref
+            .find_all::<Item>(String::from(ITEM_TABLE_NAME))
+            .unwrap_or_default();
+
+        Ok(FetchResponse::Ok(Json(items)))
+    }
+
+
+    #[oai(path = "/:id", method = "get")]
+    pub async fn get_item(&self, Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<FetchResponse<Item>> {
+        let db_ref = db
+            .lock()
+            .map_err(|_| GenericError::DbLock)?;
+
+        let item = db_ref.find_by_id::<Item>(String::from(ITEM_TABLE_NAME), id)
+            .ok_or(FetchResponse::not_found(id))?;
+
+        Ok(FetchResponse::Ok(Json(item)))
+    }
+
+
+    #[protect("MUTATE")]
+    #[oai(path = "/", method = "post")]
+    pub async fn create_item(&self, db: Data<&Arc<Mutex<Db>>>, payload: Json<ItemCreateBody>) -> Result<CreateResponse<Item>> {
+        let mut db_ref = db
         .lock()
-        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
-        .expect("Getting db lock");
-    let items = db_ref
-        .find_all::<Item>(String::from(ITEM_TABLE_NAME))
-        .unwrap_or_default();
+        .map_err(|_| GenericError::DbLock)?;
 
-    Ok(GenericResponse::<Vec<Item>>{
-        message: None,
-        status_code_u16: StatusCode::OK.as_u16(),
-        data: Some(items)
-    })
-}
+        let id = db_ref
+            .get_increment_last_id(ITEM_TABLE_NAME.to_string())
+            .map_err(|_| GenericError::DbOperation)?
+            .ok_or(GenericError::TableNotFound)?;
 
-#[handler]
-fn get_item_by_id(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
-    let db_ref = db
-        .lock()
-        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
-        .expect("Getting db lock");
-    let item = db_ref.find_by_id::<Item>(String::from(ITEM_TABLE_NAME), id)
-        .ok_or(NotFoundError)?;
+        let to_insert = Item::new(id, payload.0.name);
+        let item = db_ref
+            .insert_or_update(ITEM_TABLE_NAME.to_string(), id, to_insert)
+            .map_err(|_| GenericError::DbOperation)?
+            .ok_or(GenericError::TableNotFound)?;
 
-    Ok(GenericResponse::<Item>{
-        message: None,
-        status_code_u16: StatusCode::OK.as_u16(),
-        data: Some(item)
-    })
-}
+        Ok(CreateResponse::Created(Json(item)))
+    }
 
-#[poem_grants::protect("MUTATE")]
-#[handler]
-fn create_item(payload: ItemCreateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
+    #[protect("MUTATE")]
+    #[oai(path = "/:id", method = "put")]
+    pub async fn put_item(&self, Path(id): Path<u32>, payload: Json<ItemUpdateBody>, db: Data<&Arc<Mutex<Db>>>) -> Result<UpdateResponse<Item>> {
+        let mut db_ref = db
+            .lock()
+            .map_err(|_| GenericError::DbLock)?;
     
-    let mut db_ref = db
-        .lock()
-        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
-        .expect("Getting db lock");
-    let id = db_ref.get_increment_last_id(ITEM_TABLE_NAME.to_string()).unwrap().unwrap();
-    let to_insert = Item::new(id, payload.name);
-    let item = db_ref
-        .insert_or_update(ITEM_TABLE_NAME.to_string(), id, to_insert)
-        .unwrap()
-        .unwrap();
-        
+        db_ref
+            .find_by_id::<Item>(ITEM_TABLE_NAME.to_string(), id)
+            .ok_or(UpdateResponse::not_found(id))?;
 
-    Ok(GenericResponse::<Item>{
-        message: None,
-        status_code_u16: StatusCode::CREATED.as_u16(),
-        data: Some(item)
-    })
-}
+        let to_update = Item::new(id, payload.0.name);
+        db_ref
+            .insert_or_update(ITEM_TABLE_NAME.to_string(), id, to_update.clone())
+            .map_err(|_| GenericError::DbOperation)?
+            .ok_or(GenericError::TableNotFound)?;
+    
+        Ok(UpdateResponse::Ok(Json(to_update)))
+    }
 
-#[poem_grants::protect("MUTATE")]
-#[handler]
-fn put_item(Path(id): Path<u32>, payload: ItemUpdateBody, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Item>> {
-    let mut db_ref = db
-        .lock()
-        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
-        .expect("Getting db lock");
-    db_ref
-        .find_by_id::<Item>(ITEM_TABLE_NAME.to_string(), id)
-        .ok_or(NotFoundError)?;
-    let to_update = Item::new(id, payload.name);
-    db_ref
-        .insert_or_update(ITEM_TABLE_NAME.to_string(), id, to_update.clone())
-        .unwrap();
+    #[protect("MUTATE")]
+    #[oai(path = "/:id", method = "delete")]
+    pub async fn delete_item(&self, Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<DeleteResponse> {
+        let mut db_ref = db
+            .lock()
+            .map_err(|_| GenericError::DbLock)?;
 
-    Ok(GenericResponse::<Item>{
-        message: None,
-        status_code_u16: StatusCode::OK.as_u16(),
-        data: Some(to_update)
-    })
-}
+        db_ref
+            .delete_by_id(ITEM_TABLE_NAME.to_string(), id)
+            .map_err(|_| GenericError::DbOperation)?;
 
-#[poem_grants::protect("MUTATE")]
-#[handler]
-fn delete_item(Path(id): Path<u32>, db: Data<&Arc<Mutex<Db>>>) -> Result<GenericResponse<Value>> {
-    let mut db_ref = db
-        .lock()
-        .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))
-        .expect("Getting db lock");
-    db_ref
-        .delete_by_id(ITEM_TABLE_NAME.to_string(), id)
-        .unwrap();
-
-    Ok(GenericResponse::<Value>{
-        message: Some("Item deleted successfully".to_string()),
-        status_code_u16: StatusCode::OK.as_u16(),
-        data: None
-    })
-}
-
-
-pub fn item_routes() -> Route {
-    Route::new()
-        .at("/", get(get_all_items).post(create_item))
-        .at(
-            "/:id", 
-            get(get_item_by_id).put(put_item).delete(delete_item)
-        )
+        Ok(DeleteResponse::success())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use poem::{http::StatusCode, Endpoint};
 
-    use crate::test::{async_run_with_file_create_teardown, ApiTestClient};
+    use crate::test::{async_run_with_file_create_teardown, OpenApiTestClient};
 
     use super::*;
 
@@ -134,11 +118,9 @@ mod tests {
         db.insert_or_update(table_name.clone(), id, to_insert).unwrap();
     }
 
-    fn init_client(file_name: String) -> ApiTestClient<impl Endpoint> {
-        let routes = Route::new().nest(
-            "/items", item_routes()
-        );
-        let test_client = ApiTestClient::init(routes, file_name.as_str());
+    fn init_api_client(file_name: String) -> OpenApiTestClient<impl Endpoint> {
+        let test_client = OpenApiTestClient::init(ItemsApi, file_name.as_str());
+
         {
             let mut db = test_client.db.lock().unwrap();
             db.add_table("item".to_string(), false).unwrap();
@@ -149,21 +131,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_all_items() {
+    async fn test_api_get_all_items() {
         async_run_with_file_create_teardown(|file_name| {
-            let file_name = file_name.to_string();
             async {
-                let test_client = init_client(file_name);
+                let test_client = init_api_client(file_name);
                 {
                     let mut db = test_client.db.lock().unwrap();
                     insert_item(&mut db, String::from("item 1"));
                     insert_item(&mut db, String::from("item 2"));
                     insert_item(&mut db, String::from("item 3"));
                 }
-                let response = test_client.client.get("/items").send().await;
-        
-                let expected_data = serde_json::json!({
-                    "data": [
+
+                let response = test_client.client.get("/items")
+                    .send()
+                    .await;
+
+                    let expected_data = serde_json::json!([
                         {
                             "id": 1,
                             "name": "item 1"
@@ -176,9 +159,8 @@ mod tests {
                             "id": 3,
                             "name": "item 3"
                         }
-                    ]
-                });
-        
+                    ]);
+                
                 response.assert_status_is_ok();
                 response.assert_json(expected_data).await;
             }
@@ -186,11 +168,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_item_by_id() {
+    async fn test_api_get_item_by_id() {
         async_run_with_file_create_teardown(|file_name| {
-            let file_name = file_name.to_string();
             async {
-                let test_client = init_client(file_name);
+                let test_client = init_api_client(file_name);
                 {
                     let mut db = test_client.db.lock().unwrap();
                     insert_item(&mut db, String::from("item 1"));
@@ -201,10 +182,8 @@ mod tests {
                 let response = test_client.client.get("/items/2").send().await;
         
                 let expected_data = serde_json::json!({
-                    "data": {
-                        "id": 2,
-                        "name": "item 2"
-                    }
+                    "id": 2,
+                    "name": "item 2"
                 });
         
                 response.assert_status_is_ok();
@@ -214,11 +193,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_item_by_id_not_found() {
+    async fn test_api_get_item_by_id_not_found() {
         async_run_with_file_create_teardown(|file_name| {
-            let file_name = file_name.to_string();
             async {      
-                let test_client = init_client(file_name);
+                let test_client = init_api_client(file_name);
                 let response = test_client.client.get("/items/99").send().await;
         
                 response.assert_status(StatusCode::NOT_FOUND);
@@ -227,11 +205,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_item() {
+    async fn test_api_create_item() {
         async_run_with_file_create_teardown(|file_name| {
-            let file_name = file_name.to_string();
             async {      
-                let test_client = init_client(file_name);
+                let test_client = init_api_client(file_name);
         
                 let response = test_client.client.post("/items")
                     .body_json(&ItemCreateBody{ name: "item 1".to_string() })
@@ -240,10 +217,8 @@ mod tests {
                     .await;
         
                 let expected_data = serde_json::json!({
-                    "data": {
-                        "id": 1,
-                        "name": "item 1"
-                    }
+                    "id": 1,
+                    "name": "item 1"
                 });
         
                 response.assert_status(StatusCode::CREATED);
@@ -253,11 +228,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_put_item() {
+    async fn test_api_put_item() {
         async_run_with_file_create_teardown(|file_name| {
-            let file_name = file_name.to_string();
             async {
-                let test_client = init_client(file_name);
+                let test_client = init_api_client(file_name);
 
                 {
                     let mut db = test_client.db.lock().unwrap();
@@ -282,11 +256,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_item() {
+    async fn test_api_delete_item() {
         async_run_with_file_create_teardown(|file_name| {
-            let file_name = file_name.to_string();
             async {
-                let test_client = init_client(file_name);
+                let test_client = init_api_client(file_name);
 
                 let response = test_client.client.delete("/items/1")
                     .header("Authorization", format!("Bearer {}", test_client.token))

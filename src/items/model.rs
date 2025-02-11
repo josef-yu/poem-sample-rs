@@ -1,9 +1,11 @@
+use poem_openapi::{payload::Json, Object};
 use serde::{Serialize, Deserialize};
-use poem::{http::StatusCode, Error, FromRequest, Result};
 use serde_json::Value;
 
+use crate::response::{DeleteResponse, Detail, FetchResponse, UpdateResponse};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+
+#[derive(Serialize, Deserialize, Debug, Clone, Object)]
 pub struct Item {
     pub id: u32,
     pub name: String
@@ -15,46 +17,14 @@ impl Item {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Object)]
 pub struct ItemCreateBody {
     pub name: String
 }
 
-impl<'a> FromRequest<'a> for ItemCreateBody {
-    async fn from_request(
-            _: &'a poem::Request,
-            body: &mut poem::RequestBody,
-        ) -> Result<Self> {
-        let body = body
-            .take()
-            .unwrap()
-            .into_json::<ItemCreateBody>()
-            .await
-            .map_err(|_| Error::from_string("Malformed body", StatusCode::BAD_REQUEST))?;
-
-        Ok(body)
-    }
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Object)]
 pub struct ItemUpdateBody {
     pub name: String
-}
-
-impl<'a> FromRequest<'a> for ItemUpdateBody {
-    async fn from_request(
-            _: &'a poem::Request,
-            body: &mut poem::RequestBody,
-        ) -> Result<Self> {
-        let body = body
-            .take()
-            .unwrap()
-            .into_json::<ItemUpdateBody>()
-            .await
-            .map_err(|_| Error::from_string("Malformed body", StatusCode::BAD_REQUEST))?;
-
-        Ok(body)
-    }
 }
 
 impl From<Value> for Item {
@@ -68,5 +38,53 @@ impl From<Item> for Value {
     fn from(value: Item) -> Value {
         serde_json::to_value(value)
             .unwrap()
+    }
+}
+
+pub trait ItemNotFound {
+    fn not_found(id: u32) -> Self;
+}
+
+impl ItemNotFound for FetchResponse<Item> {
+    fn not_found(id: u32) -> Self {
+        let detail = Detail {
+            message: format!("Item {:?} not found.", id)
+        };
+
+        Self::NotFound(Json(detail))
+    }
+}
+
+impl ItemNotFound for UpdateResponse<Item> {
+    fn not_found(id: u32) -> Self{
+        let detail = Detail {
+            message: format!("Item {:?} not found.", id)
+        };
+
+        Self::NotFound(Json(detail))
+    }
+}
+
+impl ItemNotFound for DeleteResponse {
+    fn not_found(id: u32) -> Self {
+        let detail = Detail {
+            message: format!("Item {:?} not found.", id)
+        };
+
+        Self::NotFound(Json(detail))
+    }
+}
+
+pub trait ItemDelete {
+    fn success() -> Self;
+}
+
+impl ItemDelete for DeleteResponse {
+    fn success() -> Self {
+        let detail = Detail {
+            message: "Item deleted successfully.".to_string()
+        };
+
+        Self::Ok(Json(detail))
     }
 }
