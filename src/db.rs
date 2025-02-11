@@ -2,7 +2,6 @@ use std::fs::File;
 use std::path::Path;
 use std::io::prelude::*;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex};
 use serde::de::DeserializeOwned;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
@@ -15,9 +14,8 @@ struct TableData {
     data: BTreeMap<u32, Value>
 }
 
-#[derive(Clone)]
 pub struct Db {
-    file: Arc<Mutex<File>>,
+    file: File,
     tables: HashMap<String, TableData>
 }
 
@@ -47,24 +45,18 @@ impl Db {
             }
         }
 
-        let file_ref = Arc::new(Mutex::new(file));
-
-
         Ok(Self {
-            file: file_ref,
+            file,
             tables
         })
     }
 
     fn write(&mut self, data: String) -> DynaResult<'_, ()>{
-        let mut file = self.file.lock()?;
-        {
-            file.lock_shared()?;
-            file.set_len(0)?;
-            file.rewind()?;
-            file.write_all(data.as_bytes())?;
-            file.unlock()?;
-        }
+        self.file.lock_shared()?;
+        self.file.set_len(0)?;
+        self.file.rewind()?;
+        self.file.write_all(data.as_bytes())?;
+        self.file.unlock()?;
 
         Ok(())
     }
@@ -204,7 +196,7 @@ impl Db {
 
     const TABLE_NAME: &str = "sample";
 
-    fn init_db(file_name: &str) -> Db {
+    fn init_db(file_name: String) -> Db {
         let mut db = Db::init(String::from(file_name)).unwrap();
         let table_name = String::from(TABLE_NAME);
         db.add_table(table_name.clone(), true).unwrap();
